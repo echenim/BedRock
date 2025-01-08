@@ -9,26 +9,23 @@ import (
 	"time"
 )
 
-func main() {
+func checkDay(dayOfTheWeek time.Weekday, intervals time.Duration) {
 	workingDir, err := os.Getwd()
 	if err != nil {
-		log.Fatalf("Failed to get working directory: %v", err)
+		log.Fatalf("Failed to get working directory: %v\n", err)
 	}
 
 	// Define file path relative to the main.go directory
 	filePath := filepath.Join(workingDir, "example.txt")
 	log.Printf("File path set to: %s", filePath)
 
-	// Define a ticker that triggers every 4 hours
-	// ticker := time.NewTicker(4 * time.Hour)
-	ticker := time.NewTicker(20 * time.Second)
+	ticker := time.NewTicker(intervals * time.Minute)
 	defer ticker.Stop()
-
-	log.Println("Timer started. Task will run every 4 hours.")
+	log.Printf("Timer started. Task will run every %d hours this %v.\n", int(intervals), dayOfTheWeek.String()) //)
 
 	// Infinite loop to listen for ticker ticks
 	for range ticker.C {
-		log.Println("Timer triggered. Starting task...")
+		log.Println("Timer triggered. Starting task...\n")
 
 		// Define content to overwrite in the file
 		content := time.Now().Format(time.RFC1123) + "  ||   Hello, world! Hello, world! Hello, world!"
@@ -46,6 +43,9 @@ func main() {
 		}
 
 		log.Println("Task completed successfully.")
+		if time.Now().Weekday() != dayOfTheWeek {
+			break
+		}
 	}
 }
 
@@ -86,4 +86,26 @@ func runGitCommands() error {
 
 	log.Println("\nGit commands executed successfully.")
 	return nil
+}
+
+func main() {
+	for {
+		currentDay := time.Now().Weekday()
+
+		if currentDay == time.Monday {
+			checkDay(currentDay, 2)
+		} else if currentDay == time.Tuesday {
+			checkDay(currentDay, 3)
+		} else if currentDay == time.Wednesday {
+			checkDay(currentDay, 1)
+		} else if currentDay == time.Thursday {
+			checkDay(currentDay, 5)
+		} else if currentDay == time.Friday {
+			checkDay(currentDay, 1)
+		} else if currentDay == time.Saturday {
+			checkDay(currentDay, 6)
+		} else {
+			checkDay(currentDay, 9)
+		}
+	}
 }
