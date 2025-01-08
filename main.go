@@ -19,7 +19,7 @@ func checkDay(dayOfTheWeek time.Weekday, intervals time.Duration) {
 	filePath := filepath.Join(workingDir, "example.txt")
 	log.Printf("File path set to: %s", filePath)
 
-	ticker := time.NewTicker(intervals * time.Minute)
+	ticker := time.NewTicker(intervals * time.Hour)
 	defer ticker.Stop()
 	log.Printf("Timer started. Task will run every %d hours this %v.\n", int(intervals), dayOfTheWeek.String()) //)
 
