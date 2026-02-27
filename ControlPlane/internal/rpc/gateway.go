@@ -20,6 +20,7 @@ type Gateway struct {
 	addr        string
 	logger      *zap.Logger
 	lis         net.Listener
+	rateLimiter *RateLimiter
 }
 
 // NewGateway creates an HTTP gateway.
@@ -28,10 +29,14 @@ func NewGateway(addr string, nodeService *NodeServiceImpl, logger *zap.Logger) *
 		logger = zap.NewNop()
 	}
 
+	// Per-IP rate limiter: 100 requests per 10 seconds (audit S3).
+	limiter := NewRateLimiter(100, 10*time.Second)
+
 	gw := &Gateway{
 		nodeService: nodeService,
 		addr:        addr,
 		logger:      logger,
+		rateLimiter: limiter,
 	}
 
 	mux := http.NewServeMux()
@@ -44,7 +49,7 @@ func NewGateway(addr string, nodeService *NodeServiceImpl, logger *zap.Logger) *
 
 	gw.server = &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      RateLimitMiddleware(limiter, mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
@@ -73,6 +78,7 @@ func (gw *Gateway) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down the gateway.
 func (gw *Gateway) Stop() error {
+	gw.rateLimiter.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return gw.server.Shutdown(ctx)

@@ -58,14 +58,21 @@ func (tc *TimeoutCollector) HasThreshold() bool {
 	return tc.valSet.HasFPlusOne(tc.timeoutPower)
 }
 
-// HighestQC returns the highest QC carried by any collected timeout message.
+// HighestQC returns the highest *verified* QC carried by any collected timeout
+// message. QCs that fail signature/quorum verification against the validator set
+// are silently skipped to prevent fake QC injection (audit S4).
 func (tc *TimeoutCollector) HighestQC() *types.QuorumCertificate {
 	var best *types.QuorumCertificate
 	for _, msg := range tc.timeouts {
-		if msg.HighQC != nil {
-			if best == nil || msg.HighQC.Round > best.Round {
-				best = msg.HighQC
-			}
+		if msg.HighQC == nil {
+			continue
+		}
+		// Verify the QC before trusting it.
+		if err := msg.HighQC.Verify(tc.valSet); err != nil {
+			continue
+		}
+		if best == nil || msg.HighQC.Round > best.Round {
+			best = msg.HighQC
 		}
 	}
 	return best
