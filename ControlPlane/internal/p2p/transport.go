@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"sync"
+	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
@@ -10,6 +11,9 @@ import (
 	"github.com/echenim/Bedrock/controlplane/internal/types"
 	"go.uber.org/zap"
 )
+
+// broadcastTimeout is the maximum time to wait for a GossipSub Publish call.
+const broadcastTimeout = 5 * time.Second
 
 // Compile-time check that P2PTransport implements consensus.Transport.
 var _ consensus.Transport = (*P2PTransport)(nil)
@@ -31,6 +35,7 @@ type P2PTransport struct {
 	mu   sync.RWMutex
 	subs []MessageSubscription
 
+	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
@@ -59,7 +64,9 @@ func (t *P2PTransport) BroadcastProposal(proposal *types.Proposal) error {
 		return err
 	}
 	t.metrics.MessagesSent.WithLabelValues("proposal").Inc()
-	return t.host.gossip.Publish(context.TODO(), TopicConsensus, data)
+	ctx, cancel := context.WithTimeout(t.broadcastCtx(), broadcastTimeout)
+	defer cancel()
+	return t.host.gossip.Publish(ctx, TopicConsensus, data)
 }
 
 // BroadcastVote publishes a vote to the consensus topic.
@@ -69,7 +76,9 @@ func (t *P2PTransport) BroadcastVote(vote *types.Vote) error {
 		return err
 	}
 	t.metrics.MessagesSent.WithLabelValues("vote").Inc()
-	return t.host.gossip.Publish(context.TODO(), TopicConsensus, data)
+	ctx, cancel := context.WithTimeout(t.broadcastCtx(), broadcastTimeout)
+	defer cancel()
+	return t.host.gossip.Publish(ctx, TopicConsensus, data)
 }
 
 // BroadcastTimeout publishes a timeout message to the consensus topic.
@@ -79,7 +88,18 @@ func (t *P2PTransport) BroadcastTimeout(msg *types.TimeoutMessage) error {
 		return err
 	}
 	t.metrics.MessagesSent.WithLabelValues("timeout").Inc()
-	return t.host.gossip.Publish(context.TODO(), TopicConsensus, data)
+	ctx, cancel := context.WithTimeout(t.broadcastCtx(), broadcastTimeout)
+	defer cancel()
+	return t.host.gossip.Publish(ctx, TopicConsensus, data)
+}
+
+// broadcastCtx returns the transport's lifecycle context, falling back to
+// context.Background() if Start() hasn't been called yet.
+func (t *P2PTransport) broadcastCtx() context.Context {
+	if t.ctx != nil {
+		return t.ctx
+	}
+	return context.Background()
 }
 
 // Subscribe returns a MessageSubscription for receiving decoded consensus messages.
@@ -112,6 +132,7 @@ func (t *P2PTransport) Start(ctx context.Context) error {
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
+	t.ctx = ctx
 	t.cancel = cancel
 
 	t.wg.Add(1)
