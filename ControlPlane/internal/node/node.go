@@ -191,7 +191,11 @@ func (n *Node) Start(ctx context.Context) error {
 
 	// Start metrics server.
 	if n.metricsSrv != nil {
-		go n.metricsSrv.Start()
+		go func() {
+			if err := n.metricsSrv.Start(); err != nil {
+				n.logger.Error("metrics server failed", zap.Error(err))
+			}
+		}()
 	}
 
 	// Start admin server.
