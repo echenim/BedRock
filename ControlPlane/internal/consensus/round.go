@@ -192,7 +192,9 @@ func (e *Engine) onQuorumReached() {
 }
 
 // persistCommit finalizes a committed block: persists to store, notifies subscribers.
-func (e *Engine) persistCommit(block *types.Block, qc *types.QuorumCertificate) {
+// Returns an error if storage fails — the caller MUST halt consensus on error to
+// prevent in-memory state from diverging from on-disk state (audit finding C4).
+func (e *Engine) persistCommit(block *types.Block, qc *types.QuorumCertificate) error {
 	blockHash := block.Header.BlockHash
 	if blockHash.IsZero() {
 		blockHash = block.Header.ComputeHash()
@@ -205,17 +207,25 @@ func (e *Engine) persistCommit(block *types.Block, qc *types.QuorumCertificate) 
 
 	stateRoot := block.Header.StateRoot
 
-	// Persist to store.
+	// Persist to store. Storage failure is fatal — consensus must halt.
 	if e.store != nil {
 		if err := e.store.SaveBlock(block, qc); err != nil {
-			e.logger.Error("failed to save block", zap.Error(err))
+			e.logger.Error("CRITICAL: failed to save block — halting consensus",
+				zap.Error(err),
+				zap.Uint64("height", block.Header.Height),
+			)
+			return err
 		}
 		if err := e.store.SaveCommit(block.Header.Height, stateRoot); err != nil {
-			e.logger.Error("failed to save commit", zap.Error(err))
+			e.logger.Error("CRITICAL: failed to save commit — halting consensus",
+				zap.Error(err),
+				zap.Uint64("height", block.Header.Height),
+			)
+			return err
 		}
 	}
 
-	// Update commit tracking.
+	// Update commit tracking only after successful persistence.
 	e.state.LastCommitHeight = block.Header.Height
 	e.state.LastCommitQC = qc
 
@@ -231,6 +241,8 @@ func (e *Engine) persistCommit(block *types.Block, qc *types.QuorumCertificate) 
 	default:
 		// Don't block if no one is listening.
 	}
+
+	return nil
 }
 
 // advanceHeight moves the engine to the next height while preserving
