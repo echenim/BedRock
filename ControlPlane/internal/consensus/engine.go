@@ -102,8 +102,10 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.eventLoop(ctx)
 	}()
 
-	// Kick off the first round.
-	e.EnterPropose()
+	// Signal the event loop to start the first round. Using the channel
+	// ensures EnterPropose runs inside the event loop goroutine, which
+	// holds mu, preventing a data race with concurrent message processing.
+	e.nextHeightCh <- struct{}{}
 
 	return nil
 }
