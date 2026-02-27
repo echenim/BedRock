@@ -19,7 +19,17 @@ const (
 )
 
 // MaxMessageSize is the maximum allowed message size (4 MB).
+// Used as the outer bound in DecodeEnvelope before the type byte is read.
 const MaxMessageSize = 4 * 1024 * 1024
+
+// Per-message-type size limits (audit S2).
+// Votes and timeouts are small fixed-size messages; allowing 4 MB for them
+// enables memory amplification (64 channels × 16 buffer × 4 MB ≈ 4 GB).
+const (
+	MaxProposalSize = 2 * 1024 * 1024 // 2 MB — proposals contain transactions
+	MaxVoteSize     = 4 * 1024        // 4 KB — fixed-size: hash + height + round + sig
+	MaxTimeoutSize  = 4 * 1024        // 4 KB — fixed-size: height + round + sig + optional QC ref
+)
 
 func (mt MessageType) String() string {
 	switch mt {
@@ -50,7 +60,22 @@ func (e *Envelope) Encode() []byte {
 	return buf
 }
 
+// maxSizeForType returns the per-message-type size limit.
+func maxSizeForType(mt MessageType) int {
+	switch mt {
+	case MsgProposal:
+		return MaxProposalSize
+	case MsgVote:
+		return MaxVoteSize
+	case MsgTimeout:
+		return MaxTimeoutSize
+	default:
+		return MaxMessageSize
+	}
+}
+
 // DecodeEnvelope parses a wire-format message into an Envelope.
+// Enforces per-message-type size limits (audit S2).
 func DecodeEnvelope(data []byte) (*Envelope, error) {
 	if len(data) == 0 {
 		return nil, errors.New("p2p: empty message")
@@ -58,8 +83,15 @@ func DecodeEnvelope(data []byte) (*Envelope, error) {
 	if len(data) > MaxMessageSize {
 		return nil, fmt.Errorf("p2p: message too large: %d > %d", len(data), MaxMessageSize)
 	}
+
+	mt := MessageType(data[0])
+	limit := maxSizeForType(mt)
+	if len(data) > limit {
+		return nil, fmt.Errorf("p2p: %s message too large: %d > %d", mt, len(data), limit)
+	}
+
 	return &Envelope{
-		Type:    MessageType(data[0]),
+		Type:    mt,
 		Payload: data[1:],
 	}, nil
 }
