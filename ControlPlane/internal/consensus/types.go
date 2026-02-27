@@ -1,6 +1,8 @@
 package consensus
 
 import (
+	"time"
+
 	"github.com/echenim/Bedrock/controlplane/internal/crypto"
 	"github.com/echenim/Bedrock/controlplane/internal/storage"
 	"github.com/echenim/Bedrock/controlplane/internal/types"
@@ -80,16 +82,18 @@ type EngineConfig struct {
 	Logger     *zap.Logger
 
 	// Timeout settings.
-	BaseTimeoutMs  int64 // base propose timeout in milliseconds (default: 3000)
-	MaxTimeoutMs   int64 // max timeout cap in milliseconds (default: 60000)
-	TimeoutStepMs  int64 // vote/commit step timeout in milliseconds (default: 1000)
+	BaseTimeoutMs    int64         // base propose timeout in milliseconds (default: 3000)
+	MaxTimeoutMs     int64         // max timeout cap in milliseconds (default: 60000)
+	TimeoutStepMs    int64         // vote/commit step timeout in milliseconds (default: 1000)
+	ExecutionTimeout time.Duration // max time for block execution (default: 30s)
 }
 
 // DefaultEngineConfig returns an EngineConfig with sensible timeout defaults.
 func DefaultEngineConfig() EngineConfig {
 	return EngineConfig{
-		BaseTimeoutMs: 3000,
-		MaxTimeoutMs:  60000,
-		TimeoutStepMs: 1000,
+		BaseTimeoutMs:    3000,
+		MaxTimeoutMs:     60000,
+		TimeoutStepMs:    1000,
+		ExecutionTimeout: 30 * time.Second,
 	}
 }

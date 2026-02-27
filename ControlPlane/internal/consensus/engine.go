@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/echenim/Bedrock/controlplane/internal/crypto"
 	"github.com/echenim/Bedrock/controlplane/internal/storage"
@@ -21,8 +22,9 @@ type Engine struct {
 	store      storage.BlockStore
 	executor   ExecutionAdapter
 	transport  Transport
-	txProvider TxProvider
-	logger     *zap.Logger
+	txProvider       TxProvider
+	logger           *zap.Logger
+	executionTimeout time.Duration
 
 	timeouts     *TimeoutScheduler
 	evidencePool *EvidencePool
@@ -71,25 +73,31 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 		}
 	}
 
+	execTimeout := cfg.ExecutionTimeout
+	if execTimeout <= 0 {
+		execTimeout = 30 * time.Second
+	}
+
 	return &Engine{
-		state:        NewConsensusState(startHeight, cfg.ValSet),
-		valSet:       cfg.ValSet,
-		privKey:      cfg.PrivKey,
-		address:      address,
-		chainID:      cfg.ChainID,
-		store:        cfg.Store,
-		executor:     cfg.Executor,
-		transport:    cfg.Transport,
-		txProvider:   cfg.TxProvider,
-		logger:       logger,
-		timeouts:     NewTimeoutScheduler(cfg.BaseTimeoutMs, cfg.MaxTimeoutMs),
-		evidencePool: NewEvidencePool(),
-		proposalCh:   make(chan *types.Proposal, 16),
-		voteCh:       make(chan *types.Vote, 64),
-		timeoutCh:    make(chan timeoutEvent, 16),
-		commitCh:     make(chan CommitEvent, 16),
-		nextHeightCh: make(chan struct{}, 1),
-		ctx:          context.Background(), // replaced by Start(); safe default for pre-Start usage
+		state:            NewConsensusState(startHeight, cfg.ValSet),
+		valSet:           cfg.ValSet,
+		privKey:          cfg.PrivKey,
+		address:          address,
+		chainID:          cfg.ChainID,
+		store:            cfg.Store,
+		executor:         cfg.Executor,
+		transport:        cfg.Transport,
+		txProvider:       cfg.TxProvider,
+		logger:           logger,
+		executionTimeout: execTimeout,
+		timeouts:         NewTimeoutScheduler(cfg.BaseTimeoutMs, cfg.MaxTimeoutMs),
+		evidencePool:     NewEvidencePool(),
+		proposalCh:       make(chan *types.Proposal, 16),
+		voteCh:           make(chan *types.Vote, 64),
+		timeoutCh:        make(chan timeoutEvent, 16),
+		commitCh:         make(chan CommitEvent, 16),
+		nextHeightCh:     make(chan struct{}, 1),
+		ctx:              context.Background(), // replaced by Start(); safe default for pre-Start usage
 	}, nil
 }
 

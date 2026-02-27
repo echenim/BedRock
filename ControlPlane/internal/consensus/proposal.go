@@ -55,13 +55,28 @@ func (e *Engine) CreateProposal() (*types.Proposal, error) {
 		QC:           e.state.HighestQC,
 	}
 
-	// Execute the block to compute the state root.
+	// Execute the block to compute the state root with a timeout to prevent
+	// the consensus engine from stalling on pathological transactions (audit H2).
 	if e.executor != nil {
-		result, err := e.executor.ExecuteBlock(block, prevStateRoot)
-		if err != nil {
-			return nil, fmt.Errorf("execute block: %w", err)
+		type execResult struct {
+			result *ExecutionResult
+			err    error
 		}
-		block.Header.StateRoot = result.StateRoot
+		ch := make(chan execResult, 1)
+		go func() {
+			r, err := e.executor.ExecuteBlock(block, prevStateRoot)
+			ch <- execResult{r, err}
+		}()
+
+		select {
+		case res := <-ch:
+			if res.err != nil {
+				return nil, fmt.Errorf("execute block: %w", res.err)
+			}
+			block.Header.StateRoot = res.result.StateRoot
+		case <-time.After(e.executionTimeout):
+			return nil, fmt.Errorf("execute block: timed out after %s", e.executionTimeout)
+		}
 	}
 
 	// Compute block hash after all fields are set.
