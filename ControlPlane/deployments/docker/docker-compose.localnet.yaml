@@ -13,6 +13,14 @@ x-node-defaults: &node-defaults
     context: ../../../..
     dockerfile: BedRock/ControlPlane/deployments/docker/Dockerfile.node
   restart: unless-stopped
+  deploy:
+    resources:
+      limits:
+        cpus: "2.0"
+        memory: 2G
+      reservations:
+        cpus: "0.5"
+        memory: 512M
   networks:
     - bedrock-net
 

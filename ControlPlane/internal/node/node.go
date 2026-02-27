@@ -74,16 +74,16 @@ func NewNode(
 	}
 	var executor consensus.ExecutionAdapter = wasmAdapter
 
-	// 3. Mempool.
-	mp := mempool.NewMempool(cfg.Mempool, store, logger.Named("mempool"))
-
-	// 4. Metrics.
+	// 3. Metrics.
 	metrics := telemetry.NopMetrics()
 	var metricsSrv *telemetry.MetricsServer
 	if cfg.Telemetry.Enabled {
 		metrics = telemetry.NewMetrics("bedrock")
 		metricsSrv = telemetry.NewMetricsServer(cfg.Telemetry.Addr, metrics, logger.Named("metrics"))
 	}
+
+	// 4. Mempool.
+	mp := mempool.NewMempool(cfg.Mempool, store, logger.Named("mempool"), mempool.WithMetrics(metrics))
 
 	// 5. Consensus engine (transport is nil for now — P2P not wired here).
 	ecfg := consensus.DefaultEngineConfig()

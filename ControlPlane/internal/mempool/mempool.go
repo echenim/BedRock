@@ -7,6 +7,7 @@ import (
 
 	"github.com/echenim/Bedrock/controlplane/internal/config"
 	"github.com/echenim/Bedrock/controlplane/internal/storage"
+	"github.com/echenim/Bedrock/controlplane/internal/telemetry"
 	"github.com/echenim/Bedrock/controlplane/internal/types"
 	"go.uber.org/zap"
 )
@@ -35,21 +36,39 @@ type Mempool struct {
 	cache      *EvictionCache
 	cfg        config.MempoolConfig
 	stateStore storage.StateStore
+	metrics    *telemetry.Metrics
 	logger     *zap.Logger
 }
 
 // NewMempool creates a new transaction mempool.
-func NewMempool(cfg config.MempoolConfig, stateStore storage.StateStore, logger *zap.Logger) *Mempool {
+func NewMempool(cfg config.MempoolConfig, stateStore storage.StateStore, logger *zap.Logger, opts ...MempoolOption) *Mempool {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &Mempool{
+	m := &Mempool{
 		txs:        NewPriorityQueue(),
 		txByHash:   make(map[types.Hash]*MempoolTx),
 		cache:      NewEvictionCache(cfg.CacheSize),
 		cfg:        cfg,
 		stateStore: stateStore,
+		metrics:    telemetry.NopMetrics(),
 		logger:     logger,
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// MempoolOption configures the mempool.
+type MempoolOption func(*Mempool)
+
+// WithMetrics sets the metrics instance for the mempool.
+func WithMetrics(metrics *telemetry.Metrics) MempoolOption {
+	return func(m *Mempool) {
+		if metrics != nil {
+			m.metrics = metrics
+		}
 	}
 }
 
@@ -126,12 +145,16 @@ func (m *Mempool) ReapMaxTxs(maxBytes int) [][]byte {
 		totalSize int
 	)
 
+	now := time.Now()
 	for _, tx := range sorted {
 		if totalSize+tx.Size > maxBytes {
 			continue
 		}
 		result = append(result, tx.Data)
 		totalSize += tx.Size
+		if !tx.AddedAt.IsZero() {
+			m.metrics.MempoolTxAge.Observe(now.Sub(tx.AddedAt).Seconds())
+		}
 	}
 
 	return result
