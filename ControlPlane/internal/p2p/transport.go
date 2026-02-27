@@ -188,6 +188,18 @@ func (t *P2PTransport) handleMessage(data []byte, from interface{ String() strin
 
 	case MsgTimeout:
 		tm := decoded.(*types.TimeoutMessage)
+		// Two-stage validation: voter must be in validator set with valid signature.
+		if valSet != nil {
+			val, ok := valSet.GetByAddress(tm.VoterID)
+			if !ok {
+				t.metrics.MessagesRejected.WithLabelValues("unknown_validator").Inc()
+				return
+			}
+			if !tm.Verify(val.PublicKey) {
+				t.metrics.MessagesRejected.WithLabelValues("invalid_signature").Inc()
+				return
+			}
+		}
 		t.metrics.MessagesReceived.WithLabelValues("timeout").Inc()
 		t.dispatchTimeout(tm)
 	}
