@@ -277,16 +277,24 @@ func (e *Engine) advanceHeight() {
 }
 
 // scheduleRoundTimeout starts the round timer.
+// The spawned goroutine is tracked by e.wg and respects context cancellation
+// so it terminates cleanly during shutdown (audit finding C5).
 func (e *Engine) scheduleRoundTimeout() {
 	ch := e.timeouts.ScheduleTimeout(e.state.Round)
 	height := e.state.Height
 	round := e.state.Round
 
+	e.wg.Add(1)
 	go func() {
-		<-ch
+		defer e.wg.Done()
 		select {
-		case e.timeoutCh <- timeoutEvent{Height: height, Round: round}:
-		default:
+		case <-ch:
+			select {
+			case e.timeoutCh <- timeoutEvent{Height: height, Round: round}:
+			default:
+			}
+		case <-e.ctx.Done():
+			return
 		}
 	}()
 }

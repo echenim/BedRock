@@ -35,6 +35,7 @@ type Engine struct {
 	nextHeightCh chan struct{} // signals that a new height should start
 
 	// Lifecycle.
+	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 	mu     sync.Mutex
@@ -88,12 +89,14 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 		timeoutCh:    make(chan timeoutEvent, 16),
 		commitCh:     make(chan CommitEvent, 16),
 		nextHeightCh: make(chan struct{}, 1),
+		ctx:          context.Background(), // replaced by Start(); safe default for pre-Start usage
 	}, nil
 }
 
 // Start begins the consensus event loop.
 func (e *Engine) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
+	e.ctx = ctx
 	e.cancel = cancel
 
 	e.wg.Add(1)
