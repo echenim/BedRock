@@ -109,6 +109,11 @@ pub extern "C" fn bedrock_execute_block(
     // Serialize the response
     let resp_bytes = encode_execution_response(&response);
 
+    // Shrink the Vec to exact length so capacity == len, avoiding UB in
+    // bedrock_free which reconstructs with capacity = len (audit R1).
+    let resp_bytes = resp_bytes.into_boxed_slice();
+    let resp_bytes = Vec::from(resp_bytes); // capacity == len guaranteed
+
     // Leak the response Vec into raw parts for the host to read.
     // The host will call bedrock_free to reclaim this memory.
     let len = resp_bytes.len();
