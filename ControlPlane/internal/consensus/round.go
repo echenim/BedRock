@@ -160,6 +160,16 @@ func (e *Engine) HandleTimeout(height, round uint64) {
 // a QC for its parent (block at height H-1), the parent is committed.
 // After processing, the engine always advances to the next height.
 func (e *Engine) onQuorumReached() {
+	// Guard against nil proposal — can occur if votes form a quorum before
+	// the proposal is received or after it is cleared by a round change (audit C6).
+	if e.state.Proposal == nil || e.state.Proposal.Block == nil {
+		e.logger.Error("quorum reached but no proposal available — skipping",
+			zap.Uint64("height", e.state.Height),
+			zap.Uint64("round", e.state.Round),
+		)
+		return
+	}
+
 	qc, err := e.state.VoteSet.MakeQC()
 	if err != nil {
 		e.logger.Error("failed to make QC", zap.Error(err))
