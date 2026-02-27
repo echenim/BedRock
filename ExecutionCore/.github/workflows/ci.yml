@@ -1,0 +1,124 @@
+name: CI — Rust Execution Core
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "ExecutionCore/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "ExecutionCore/**"
+
+defaults:
+  run:
+    working-directory: ExecutionCore
+
+jobs:
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ExecutionCore
+
+      - name: cargo clippy
+        run: cargo clippy --all -- -D warnings
+
+  test:
+    name: Test (Native)
+    runs-on: ubuntu-latest
+    needs: [fmt, clippy]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ExecutionCore
+
+      - name: cargo test
+        run: cargo test --all
+
+  build-wasm:
+    name: Build WASM
+    runs-on: ubuntu-latest
+    needs: [fmt, clippy]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ExecutionCore
+
+      - name: Build WASM guest
+        run: cargo build --release --target wasm32-unknown-unknown -p bedrock-wasm-guest
+
+      - name: Verify WASM artifact
+        run: |
+          WASM_FILE="target/wasm32-unknown-unknown/release/bedrock_wasm_guest.wasm"
+          if [ ! -f "${WASM_FILE}" ]; then
+            echo "::error::WASM artifact not found"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "${WASM_FILE}" 2>/dev/null || stat -f%z "${WASM_FILE}")
+          echo "WASM artifact size: ${SIZE} bytes"
+          if [ "${SIZE}" -gt 5242880 ]; then
+            echo "::warning::WASM artifact exceeds 5MB (${SIZE} bytes)"
+          fi
+
+  determinism:
+    name: Determinism Check
+    runs-on: ubuntu-latest
+    needs: build-wasm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ExecutionCore
+
+      - name: Build WASM twice and compare hashes
+        run: |
+          cargo build --release --target wasm32-unknown-unknown -p bedrock-wasm-guest
+          HASH1=$(sha256sum target/wasm32-unknown-unknown/release/bedrock_wasm_guest.wasm | cut -d' ' -f1)
+          cargo clean -p bedrock-wasm-guest --release --target wasm32-unknown-unknown
+          cargo build --release --target wasm32-unknown-unknown -p bedrock-wasm-guest
+          HASH2=$(sha256sum target/wasm32-unknown-unknown/release/bedrock_wasm_guest.wasm | cut -d' ' -f1)
+          echo "Build 1: ${HASH1}"
+          echo "Build 2: ${HASH2}"
+          if [ "${HASH1}" != "${HASH2}" ]; then
+            echo "::error::WASM builds are not deterministic!"
+            exit 1
+          fi
+          echo "WASM builds are deterministic."

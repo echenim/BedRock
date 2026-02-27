@@ -1,0 +1,44 @@
+name: Security — Rust SandBox
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - "SandBox/Cargo.toml"
+      - "SandBox/Cargo.lock"
+      - "SandBox/**/Cargo.toml"
+  pull_request:
+    paths:
+      - "SandBox/Cargo.toml"
+      - "SandBox/Cargo.lock"
+      - "SandBox/**/Cargo.toml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: SandBox
+
+jobs:
+  cargo-audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run cargo audit
+        run: cargo audit
+
+  cargo-deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          manifest-path: SandBox/Cargo.toml

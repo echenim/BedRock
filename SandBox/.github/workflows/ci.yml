@@ -1,0 +1,73 @@
+name: CI — Rust SandBox
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "SandBox/**"
+      - "ExecutionCore/primitives/**" # SandBox depends on bedrock-primitives
+      - ".github/workflows/ci.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "SandBox/**"
+      - "ExecutionCore/primitives/**"
+
+defaults:
+  run:
+    working-directory: SandBox
+
+jobs:
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: SandBox
+
+      - name: cargo clippy
+        run: cargo clippy --all -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [fmt, clippy]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            SandBox
+            ExecutionCore
+
+      - name: Build WASM guest (needed for sandbox tests)
+        run: cargo build --release --target wasm32-unknown-unknown -p bedrock-wasm-guest
+        working-directory: ExecutionCore
+
+      - name: cargo test
+        run: cargo test --all

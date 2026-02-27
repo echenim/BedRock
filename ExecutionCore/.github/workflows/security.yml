@@ -1,0 +1,44 @@
+name: Security — Rust Execution Core
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - "ExecutionCore/Cargo.toml"
+      - "ExecutionCore/Cargo.lock"
+      - "ExecutionCore/**/Cargo.toml"
+  pull_request:
+    paths:
+      - "ExecutionCore/Cargo.toml"
+      - "ExecutionCore/Cargo.lock"
+      - "ExecutionCore/**/Cargo.toml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: ExecutionCore
+
+jobs:
+  cargo-audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run cargo audit
+        run: cargo audit
+
+  cargo-deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          manifest-path: ExecutionCore/Cargo.toml

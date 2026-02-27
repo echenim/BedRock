@@ -1,0 +1,73 @@
+name: Nightly — Extended Tests
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: ControlPlane
+
+jobs:
+  race-extended:
+    name: Extended Race Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: ControlPlane/go.sum
+
+      - name: Run tests with race detector (extended timeout)
+        run: go test -race -count=3 -timeout 15m ./...
+
+  fuzz:
+    name: Fuzz Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: ControlPlane/go.sum
+
+      - name: Run fuzz tests (60s per target)
+        run: |
+          for pkg in $(go list ./...); do
+            TARGETS=$(go test -list 'Fuzz.*' "${pkg}" 2>/dev/null | grep '^Fuzz' || true)
+            for target in ${TARGETS}; do
+              echo "=== Fuzzing ${pkg} / ${target} ==="
+              go test -fuzz="${target}" -fuzztime=60s "${pkg}" || exit 1
+            done
+          done
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: ControlPlane/go.sum
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build WASM artifact
+        run: cargo build --release --target wasm32-unknown-unknown -p bedrock-wasm-guest
+        working-directory: ExecutionCore
+
+      - name: Build SandBox
+        run: cargo build --release
+        working-directory: SandBox
+
+      - name: Run integration tests
+        run: go test -race -count=1 -timeout 10m -tags=integration ./...

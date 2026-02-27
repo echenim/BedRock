@@ -1,0 +1,30 @@
+name: Release — SandBox
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build SandBox (Release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: SandBox
+
+      - name: Build release
+        run: cargo build --release
+        working-directory: SandBox
+
+      - name: Run release tests
+        run: cargo test --release --all
+        working-directory: SandBox

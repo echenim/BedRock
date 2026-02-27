@@ -1,0 +1,96 @@
+name: CI — Go Control Plane
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "ControlPlane/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "ControlPlane/**"
+
+defaults:
+  run:
+    working-directory: ControlPlane
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: ControlPlane/go.sum
+
+      - name: Build binary
+        run: go build -trimpath -o bedrockd ./cmd/bedrockd
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: ControlPlane/go.sum
+
+      - name: Run tests with race detector
+        run: go test -race -count=1 -timeout 5m -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: ControlPlane/coverage.out
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: ControlPlane/go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: ControlPlane
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt check
+        run: |
+          UNFORMATTED=$(gofmt -l . | grep -v "gen/" || true)
+          if [ -n "${UNFORMATTED}" ]; then
+            echo "::error::Unformatted files:"
+            echo "${UNFORMATTED}"
+            exit 1
+          fi
+
+  proto-lint:
+    name: Protobuf Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: latest
+
+      - name: buf lint
+        run: buf lint
+        working-directory: ControlPlane
