@@ -76,8 +76,14 @@ func TestBlockHeaderComputeHashDeterministic(t *testing.T) {
 		ChainID:   []byte("test-chain"),
 	}
 
-	h1 := header.ComputeHash()
-	h2 := header.ComputeHash()
+	h1, err := header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	h2, err := header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
 	if h1 != h2 {
 		t.Fatal("ComputeHash should be deterministic")
 	}
@@ -89,8 +95,14 @@ func TestBlockHeaderComputeHashDeterministic(t *testing.T) {
 func TestBlockHeaderComputeHashDiffersOnChange(t *testing.T) {
 	hdr1 := &types.BlockHeader{Height: 1, ChainID: []byte("c")}
 	hdr2 := &types.BlockHeader{Height: 2, ChainID: []byte("c")}
-	h1 := hdr1.ComputeHash()
-	h2 := hdr2.ComputeHash()
+	h1, err := hdr1.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	h2, err := hdr2.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
 	if h1 == h2 {
 		t.Fatal("different heights should produce different hashes")
 	}
@@ -143,7 +155,11 @@ func TestBlockToProtoRoundTrip(t *testing.T) {
 		},
 		Transactions: [][]byte{[]byte("tx1"), []byte("tx2")},
 	}
-	b.Header.BlockHash = b.Header.ComputeHash()
+	hash, err := b.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	b.Header.BlockHash = hash
 
 	pb := b.ToProto()
 	decoded, err := types.BlockFromProto(pb)

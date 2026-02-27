@@ -34,7 +34,8 @@ func newMockProvider() *mockBlockProvider {
 	}
 }
 
-func (m *mockBlockProvider) addBlock(h uint64, txs [][]byte) {
+func (m *mockBlockProvider) addBlock(t *testing.T, h uint64, txs [][]byte) {
+	t.Helper()
 	block := &types.Block{
 		Header: types.BlockHeader{
 			Height:     h,
@@ -44,7 +45,11 @@ func (m *mockBlockProvider) addBlock(h uint64, txs [][]byte) {
 		},
 		Transactions: txs,
 	}
-	block.Header.BlockHash = block.Header.ComputeHash()
+	hash, err := block.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	block.Header.BlockHash = hash
 	m.blocks[h] = block
 	if h > m.latestH {
 		m.latestH = h
@@ -91,7 +96,11 @@ func TestVerifyBlockValid(t *testing.T) {
 		},
 	}
 	block.Header.ProposerID = types.Address{0x01}
-	block.Header.BlockHash = block.Header.ComputeHash()
+	hash, err := block.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	block.Header.BlockHash = hash
 
 	if err := v.VerifyBlock(block, nil, 1); err != nil {
 		t.Fatalf("expected valid block: %v", err)
@@ -132,7 +141,11 @@ func TestVerifyAndExecuteBlock(t *testing.T) {
 		},
 		Transactions: [][]byte{[]byte("tx1")},
 	}
-	block.Header.BlockHash = block.Header.ComputeHash()
+	hash, err := block.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	block.Header.BlockHash = hash
 
 	result, err := v.VerifyAndExecuteBlock(block, nil, types.ZeroHash, expectedRoot)
 	if err != nil {
@@ -156,10 +169,14 @@ func TestVerifyAndExecuteBlockStateRootMismatch(t *testing.T) {
 			ProposerID: types.Address{0x01},
 		},
 	}
-	block.Header.BlockHash = block.Header.ComputeHash()
+	hash, err := block.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	block.Header.BlockHash = hash
 
 	committedRoot := crypto.HashSHA256([]byte("expected"))
-	_, err := v.VerifyAndExecuteBlock(block, nil, types.ZeroHash, committedRoot)
+	_, err = v.VerifyAndExecuteBlock(block, nil, types.ZeroHash, committedRoot)
 	if err == nil {
 		t.Fatal("expected state root mismatch error")
 	}
@@ -194,7 +211,7 @@ func TestVerifySnapshotZeroRoot(t *testing.T) {
 func TestFetcherFetchBlocks(t *testing.T) {
 	provider := newMockProvider()
 	for h := uint64(1); h <= 5; h++ {
-		provider.addBlock(h, [][]byte{[]byte(fmt.Sprintf("tx-%d", h))})
+		provider.addBlock(t, h, [][]byte{[]byte(fmt.Sprintf("tx-%d", h))})
 	}
 
 	store := storage.NewMemStore()
@@ -220,8 +237,8 @@ func TestFetcherFetchBlocks(t *testing.T) {
 
 func TestFetcherSkipsExistingBlocks(t *testing.T) {
 	provider := newMockProvider()
-	provider.addBlock(1, nil)
-	provider.addBlock(2, nil)
+	provider.addBlock(t, 1, nil)
+	provider.addBlock(t, 2, nil)
 
 	store := storage.NewMemStore()
 	// Pre-store block 1.
@@ -247,7 +264,7 @@ func TestFetcherInvalidRange(t *testing.T) {
 
 func TestFetcherHandlesPeerError(t *testing.T) {
 	provider := newMockProvider()
-	provider.addBlock(1, nil)
+	provider.addBlock(t, 1, nil)
 	provider.failAt = 2
 
 	store := storage.NewMemStore()
@@ -267,7 +284,7 @@ func TestFetcherHandlesPeerError(t *testing.T) {
 func TestBlockSyncerFastSync(t *testing.T) {
 	provider := newMockProvider()
 	for h := uint64(1); h <= 10; h++ {
-		provider.addBlock(h, [][]byte{[]byte(fmt.Sprintf("tx-%d", h))})
+		provider.addBlock(t, h, [][]byte{[]byte(fmt.Sprintf("tx-%d", h))})
 	}
 
 	store := storage.NewMemStore()
@@ -294,7 +311,7 @@ func TestBlockSyncerFastSync(t *testing.T) {
 
 func TestBlockSyncerAlreadyCaughtUp(t *testing.T) {
 	provider := newMockProvider()
-	provider.addBlock(5, nil)
+	provider.addBlock(t, 5, nil)
 
 	store := storage.NewMemStore()
 	// Pre-store blocks up to height 5.
@@ -313,7 +330,7 @@ func TestBlockSyncerAlreadyCaughtUp(t *testing.T) {
 
 func TestBlockSyncerFastSyncRejectsInvalidBlock(t *testing.T) {
 	provider := newMockProvider()
-	provider.addBlock(1, nil)
+	provider.addBlock(t, 1, nil)
 	provider.failAt = 2 // simulates peer failure
 
 	store := storage.NewMemStore()
@@ -334,7 +351,7 @@ func TestBlockSyncerSnapshotSync(t *testing.T) {
 	provider := newMockProvider()
 	// Set up many blocks (> snapshotThreshold).
 	for h := uint64(1); h <= 200; h++ {
-		provider.addBlock(h, nil)
+		provider.addBlock(t, h, nil)
 	}
 
 	// Add snapshot at height 200.
@@ -371,7 +388,7 @@ func TestBlockSyncerSnapshotSync(t *testing.T) {
 func TestBlockSyncerContextCancellation(t *testing.T) {
 	provider := newMockProvider()
 	for h := uint64(1); h <= 100; h++ {
-		provider.addBlock(h, nil)
+		provider.addBlock(t, h, nil)
 	}
 
 	store := storage.NewMemStore()

@@ -45,7 +45,11 @@ func makeTestProposal(t *testing.T) *types.Proposal {
 		},
 		Transactions: [][]byte{[]byte("tx1"), []byte("tx2")},
 	}
-	block.Header.BlockHash = block.Header.ComputeHash()
+	hash, err := block.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	block.Header.BlockHash = hash
 
 	proposal := &types.Proposal{
 		Block:      block,

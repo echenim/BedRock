@@ -12,7 +12,8 @@ import (
 
 // --- Test helpers ---
 
-func testBlock(height uint64, txs [][]byte) *types.Block {
+func testBlock(t *testing.T, height uint64, txs [][]byte) *types.Block {
+	t.Helper()
 	block := &types.Block{
 		Header: types.BlockHeader{
 			Height:  height,
@@ -21,7 +22,11 @@ func testBlock(height uint64, txs [][]byte) *types.Block {
 		},
 		Transactions: txs,
 	}
-	block.Header.BlockHash = block.Header.ComputeHash()
+	hash, err := block.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	block.Header.BlockHash = hash
 	return block
 }
 
@@ -36,7 +41,7 @@ func TestMockExecutorSuccess(t *testing.T) {
 	mock.NextStateRoot = crypto.HashSHA256([]byte("state-root"))
 	mock.NextGasUsed = 5000
 
-	block := testBlock(1, [][]byte{[]byte("tx1")})
+	block := testBlock(t, 1, [][]byte{[]byte("tx1")})
 	prevRoot := types.ZeroHash
 
 	result, err := mock.ExecuteBlock(block, prevRoot)
@@ -61,7 +66,7 @@ func TestMockExecutorFailure(t *testing.T) {
 	mock := NewMockExecutor()
 	mock.ShouldFail = true
 
-	block := testBlock(1, nil)
+	block := testBlock(t, 1, nil)
 	_, err := mock.ExecuteBlock(block, types.ZeroHash)
 	if err == nil {
 		t.Fatal("expected error from failed mock")
@@ -115,7 +120,7 @@ func TestWASMAdapterExecuteBlock(t *testing.T) {
 	}
 	defer adapter.Close()
 
-	block := testBlock(1, [][]byte{[]byte("tx1"), []byte("tx2")})
+	block := testBlock(t, 1, [][]byte{[]byte("tx1"), []byte("tx2")})
 	prevRoot := types.ZeroHash
 
 	result, err := adapter.ExecuteBlock(block, prevRoot)
@@ -139,7 +144,7 @@ func TestNativeExecutorDeterministic(t *testing.T) {
 	s2, _ := NewSandbox(cfg)
 
 	txs := [][]byte{[]byte("tx-a"), []byte("tx-b"), []byte("tx-c")}
-	block := testBlock(1, txs)
+	block := testBlock(t, 1, txs)
 	prevRoot := types.ZeroHash
 
 	store1 := storage.NewMemStore()
@@ -166,8 +171,8 @@ func TestNativeExecutorDifferentBlocks(t *testing.T) {
 	cfg := config.ExecutionConfig{GasLimit: 100_000_000}
 	s, _ := NewSandbox(cfg)
 
-	block1 := testBlock(1, [][]byte{[]byte("tx-a")})
-	block2 := testBlock(1, [][]byte{[]byte("tx-b")})
+	block1 := testBlock(t, 1, [][]byte{[]byte("tx-a")})
+	block2 := testBlock(t, 1, [][]byte{[]byte("tx-b")})
 	prevRoot := types.ZeroHash
 
 	r1, _ := s.Execute(block1, prevRoot, nil)
@@ -182,7 +187,7 @@ func TestNativeExecutorEmptyBlock(t *testing.T) {
 	cfg := config.ExecutionConfig{GasLimit: 100_000_000}
 	s, _ := NewSandbox(cfg)
 
-	block := testBlock(1, nil)
+	block := testBlock(t, 1, nil)
 	prevRoot := crypto.HashSHA256([]byte("prev"))
 
 	result, err := s.Execute(block, prevRoot, nil)
@@ -204,7 +209,7 @@ func TestNativeExecutorGasLimit(t *testing.T) {
 	s, _ := NewSandbox(cfg)
 
 	// Each tx uses 1000 base + payload bytes.
-	block := testBlock(1, [][]byte{[]byte("tx-a")})
+	block := testBlock(t, 1, [][]byte{[]byte("tx-a")})
 
 	_, err := s.Execute(block, types.ZeroHash, nil)
 	if err == nil {
@@ -217,7 +222,7 @@ func TestNativeExecutorPersistsState(t *testing.T) {
 	s, _ := NewSandbox(cfg)
 	store := storage.NewMemStore()
 
-	block := testBlock(1, [][]byte{[]byte("tx-data")})
+	block := testBlock(t, 1, [][]byte{[]byte("tx-data")})
 	result, err := s.Execute(block, types.ZeroHash, store)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -239,14 +244,14 @@ func TestNativeExecutorChainedBlocks(t *testing.T) {
 	store := storage.NewMemStore()
 
 	// Block 1
-	block1 := testBlock(1, [][]byte{[]byte("tx1")})
+	block1 := testBlock(t, 1, [][]byte{[]byte("tx1")})
 	r1, err := s.Execute(block1, types.ZeroHash, store)
 	if err != nil {
 		t.Fatalf("execute block 1: %v", err)
 	}
 
 	// Block 2 builds on block 1's state root.
-	block2 := testBlock(2, [][]byte{[]byte("tx2")})
+	block2 := testBlock(t, 2, [][]byte{[]byte("tx2")})
 	r2, err := s.Execute(block2, r1.StateRoot, store)
 	if err != nil {
 		t.Fatalf("execute block 2: %v", err)

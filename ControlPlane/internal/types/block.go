@@ -32,7 +32,7 @@ type Block struct {
 // ComputeHash computes the canonical block hash: SHA-256 over the deterministic
 // protobuf serialization of the header.
 // Per SPEC.md §3 and implementation notes.
-func (h *BlockHeader) ComputeHash() Hash {
+func (h *BlockHeader) ComputeHash() (Hash, error) {
 	pb := &typesv1.BlockHeader{
 		Height:     h.Height,
 		Round:      h.Round,
@@ -45,10 +45,9 @@ func (h *BlockHeader) ComputeHash() Hash {
 	}
 	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(pb)
 	if err != nil {
-		// proto.Marshal on a well-formed message should not fail.
-		panic(fmt.Sprintf("types: failed to marshal block header: %v", err))
+		return ZeroHash, fmt.Errorf("types: failed to marshal block header: %w", err)
 	}
-	return sha256.Sum256(data)
+	return sha256.Sum256(data), nil
 }
 
 // Validate checks structural validity of the block.

@@ -166,7 +166,11 @@ func TestScenarioLockingRejectsConflict(t *testing.T) {
 			ChainID:    []byte("test-chain"),
 		},
 	}
-	lockedBlock.Header.BlockHash = lockedBlock.Header.ComputeHash()
+	hash, err := lockedBlock.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	lockedBlock.Header.BlockHash = hash
 	engine.state.Lock(lockedBlock, 0)
 
 	// Create conflicting proposal — different parent, no higher QC.
@@ -178,7 +182,11 @@ func TestScenarioLockingRejectsConflict(t *testing.T) {
 			ChainID:    []byte("test-chain"),
 		},
 	}
-	conflictingBlock.Header.BlockHash = conflictingBlock.Header.ComputeHash()
+	hash, err = conflictingBlock.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	conflictingBlock.Header.BlockHash = hash
 
 	proposal := &types.Proposal{
 		Block:      conflictingBlock,
@@ -189,7 +197,7 @@ func TestScenarioLockingRejectsConflict(t *testing.T) {
 	sig := crypto.Sign(proposer.priv, payload)
 	proposal.Signature = crypto.SigTo64(sig)
 
-	err := engine.ValidateProposal(proposal)
+	err = engine.ValidateProposal(proposal)
 	if err == nil {
 		t.Fatal("expected proposal validation to fail due to locking rule")
 	}
@@ -212,7 +220,11 @@ func TestScenarioUnlockWithHigherQC(t *testing.T) {
 			ChainID:    []byte("test-chain"),
 		},
 	}
-	lockedBlock.Header.BlockHash = lockedBlock.Header.ComputeHash()
+	hash, err := lockedBlock.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	lockedBlock.Header.BlockHash = hash
 	engine.state.Lock(lockedBlock, 0)
 
 	// Test 1: proposal that doesn't extend locked block and has no QC → rejected.
@@ -224,13 +236,17 @@ func TestScenarioUnlockWithHigherQC(t *testing.T) {
 			ChainID:    []byte("test-chain"),
 		},
 	}
-	conflictBlock.Header.BlockHash = conflictBlock.Header.ComputeHash()
+	hash, err = conflictBlock.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	conflictBlock.Header.BlockHash = hash
 	conflictProposal := &types.Proposal{Block: conflictBlock, Round: 0, ProposerID: v.address}
 	payload := conflictProposal.SigningPayload()
 	sig := crypto.Sign(v.priv, payload)
 	conflictProposal.Signature = crypto.SigTo64(sig)
 
-	err := engine.ValidateProposal(conflictProposal)
+	err = engine.ValidateProposal(conflictProposal)
 	if err == nil {
 		t.Fatal("expected rejection: proposal doesn't extend locked block")
 	}
@@ -244,7 +260,11 @@ func TestScenarioUnlockWithHigherQC(t *testing.T) {
 			ChainID:    []byte("test-chain"),
 		},
 	}
-	extendBlock.Header.BlockHash = extendBlock.Header.ComputeHash()
+	hash, err = extendBlock.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	extendBlock.Header.BlockHash = hash
 	extendProposal := &types.Proposal{Block: extendBlock, Round: 0, ProposerID: v.address}
 	payload = extendProposal.SigningPayload()
 	sig = crypto.Sign(v.priv, payload)

@@ -85,7 +85,12 @@ func (e *Engine) EnterVote() {
 	block := proposal.Block
 	blockHash := block.Header.BlockHash
 	if blockHash.IsZero() {
-		blockHash = block.Header.ComputeHash()
+		h, err := block.Header.ComputeHash()
+		if err != nil {
+			e.logger.Error("failed to compute block hash", zap.Error(err))
+			return
+		}
+		blockHash = h
 	}
 
 	// Sign vote.
@@ -210,7 +215,11 @@ func (e *Engine) onQuorumReached() {
 func (e *Engine) persistCommit(block *types.Block, qc *types.QuorumCertificate) error {
 	blockHash := block.Header.BlockHash
 	if blockHash.IsZero() {
-		blockHash = block.Header.ComputeHash()
+		h, err := block.Header.ComputeHash()
+		if err != nil {
+			return err
+		}
+		blockHash = h
 	}
 
 	e.logger.Info("committing block",

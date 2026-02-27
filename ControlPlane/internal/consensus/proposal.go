@@ -80,7 +80,11 @@ func (e *Engine) CreateProposal() (*types.Proposal, error) {
 	}
 
 	// Compute block hash after all fields are set.
-	block.Header.BlockHash = block.Header.ComputeHash()
+	blockHash, err := block.Header.ComputeHash()
+	if err != nil {
+		return nil, fmt.Errorf("compute block hash: %w", err)
+	}
+	block.Header.BlockHash = blockHash
 
 	// Sign the proposal.
 	payload := (&types.Proposal{Block: block, Round: e.state.Round}).SigningPayload()
@@ -149,7 +153,11 @@ func (e *Engine) ValidateProposal(proposal *types.Proposal) error {
 	if e.state.IsLocked() {
 		lockedHash := e.state.LockedBlock.Header.BlockHash
 		if lockedHash.IsZero() {
-			lockedHash = e.state.LockedBlock.Header.ComputeHash()
+			h, err := e.state.LockedBlock.Header.ComputeHash()
+			if err != nil {
+				return fmt.Errorf("compute locked block hash: %w", err)
+			}
+			lockedHash = h
 		}
 
 		extendsLocked := block.Header.ParentHash == lockedHash

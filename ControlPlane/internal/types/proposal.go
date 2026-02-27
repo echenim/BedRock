@@ -23,7 +23,8 @@ func (p *Proposal) SigningPayload() []byte {
 	buf := make([]byte, 32+8)
 	blockHash := p.Block.Header.BlockHash
 	if blockHash.IsZero() {
-		blockHash = p.Block.Header.ComputeHash()
+		h, _ := p.Block.Header.ComputeHash()
+		blockHash = h
 	}
 	copy(buf[:32], blockHash[:])
 	binary.LittleEndian.PutUint64(buf[32:40], p.Round)

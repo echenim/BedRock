@@ -30,7 +30,11 @@ func testNodeService(t *testing.T) (*NodeServiceImpl, storage.Store) {
 		},
 		Transactions: [][]byte{[]byte("tx1"), []byte("tx2")},
 	}
-	block.Header.BlockHash = block.Header.ComputeHash()
+	hash, err := block.Header.ComputeHash()
+	if err != nil {
+		t.Fatalf("ComputeHash: %v", err)
+	}
+	block.Header.BlockHash = hash
 	store.SaveBlock(block, nil)
 
 	// Add state data.
