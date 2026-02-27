@@ -252,7 +252,9 @@ func (e *Engine) persistCommit(block *types.Block, qc *types.QuorumCertificate) 
 	select {
 	case e.commitCh <- evt:
 	default:
-		// Don't block if no one is listening.
+		e.logger.Warn("commit event dropped: subscriber channel full",
+			zap.Uint64("height", block.Header.Height),
+		)
 	}
 
 	return nil
