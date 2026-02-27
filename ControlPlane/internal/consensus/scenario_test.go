@@ -351,6 +351,8 @@ func TestScenarioEngineLifecycle(t *testing.T) {
 }
 
 // --- Scenario: HandleTimeoutMsg with higher QC ---
+// When f+1 timeout messages are collected for the current round, the engine
+// advances to the next round and updates HighestQC from the collected messages.
 
 func TestScenarioHandleTimeoutMsgHigherQC(t *testing.T) {
 	v := newTestValidator(t)
@@ -362,9 +364,11 @@ func TestScenarioHandleTimeoutMsgHigherQC(t *testing.T) {
 		BlockHash: crypto.HashSHA256([]byte("block5")),
 	}
 
+	// Send timeout for the CURRENT round (0) with a higher QC.
+	// With 1 validator (power=100), f+1=34, so a single message reaches threshold.
 	msg := &types.TimeoutMessage{
 		Height:  1,
-		Round:   3,
+		Round:   0,
 		VoterID: v.address,
 		HighQC:  higherQC,
 	}
@@ -373,6 +377,73 @@ func TestScenarioHandleTimeoutMsgHigherQC(t *testing.T) {
 
 	if engine.state.HighestQC == nil || engine.state.HighestQC.Round != 5 {
 		t.Fatal("expected highest QC to be updated to round 5")
+	}
+	// Should advance to round 1 (current round + 1), NOT an arbitrary round.
+	if engine.state.Round != 1 {
+		t.Fatalf("expected round 1 after TC, got %d", engine.state.Round)
+	}
+}
+
+// --- Scenario: HandleTimeoutMsg rejects future round (C1 fix) ---
+// A single timeout message for a future round must NOT cause a round skip.
+
+func TestScenarioHandleTimeoutMsgRejectsFutureRound(t *testing.T) {
+	v := newTestValidator(t)
+	valSet := makeValidatorSet(t, []testValidator{v})
+	engine, _ := newTestEngine(t, v, valSet, nil)
+
+	msg := &types.TimeoutMessage{
+		Height:  1,
+		Round:   5, // Future round
+		VoterID: v.address,
+	}
+
+	engine.HandleTimeoutMsg(msg)
+
+	// Must NOT advance — timeout for wrong round is ignored.
+	if engine.state.Round != 0 {
+		t.Fatalf("expected round 0 (no advance), got %d", engine.state.Round)
+	}
+}
+
+// --- Scenario: HandleTimeoutMsg requires f+1 threshold ---
+
+func TestScenarioHandleTimeoutMsgRequiresFPlusOne(t *testing.T) {
+	vals := make([]testValidator, 4)
+	for i := range vals {
+		vals[i] = newTestValidator(t)
+	}
+	valSet := makeValidatorSet(t, vals)
+
+	// 4 validators, power=400, f=(400-1)/3=133, f+1=134. Need 2 timeouts (200 >= 134).
+	proposerIdx := (1 + 0) % 4
+	proposer := vals[proposerIdx]
+	engine, _ := newTestEngine(t, proposer, valSet, nil)
+
+	// First timeout — below threshold.
+	otherIdx := (proposerIdx + 1) % 4
+	msg1 := &types.TimeoutMessage{
+		Height:  1,
+		Round:   0,
+		VoterID: vals[otherIdx].address,
+	}
+	engine.HandleTimeoutMsg(msg1)
+
+	if engine.state.Round != 0 {
+		t.Fatalf("expected round 0 (below f+1), got %d", engine.state.Round)
+	}
+
+	// Second timeout — reaches threshold.
+	otherIdx2 := (proposerIdx + 2) % 4
+	msg2 := &types.TimeoutMessage{
+		Height:  1,
+		Round:   0,
+		VoterID: vals[otherIdx2].address,
+	}
+	engine.HandleTimeoutMsg(msg2)
+
+	if engine.state.Round != 1 {
+		t.Fatalf("expected round 1 after f+1 timeouts, got %d", engine.state.Round)
 	}
 }
 

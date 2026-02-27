@@ -84,7 +84,9 @@ func (e *Engine) HandleVote(vote *types.Vote) {
 }
 
 // HandleTimeoutMsg processes a received timeout message from a peer.
-// If we receive f+1 timeout messages for a round, we also advance.
+// Per SPEC.md §10: f+1 timeout messages for the current round are required to
+// form a Timeout Certificate (TC) before advancing to the next round. This prevents
+// a single Byzantine validator from forcing arbitrary round skips.
 func (e *Engine) HandleTimeoutMsg(msg *types.TimeoutMessage) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -93,21 +95,47 @@ func (e *Engine) HandleTimeoutMsg(msg *types.TimeoutMessage) {
 		return
 	}
 
-	// If the message carries a higher QC, update ours.
-	if msg.HighQC != nil {
-		if e.state.HighestQC == nil || msg.HighQC.Round > e.state.HighestQC.Round {
-			e.state.UpdateHighestQC(msg.HighQC)
-		}
+	// Only process timeouts for our current height and round.
+	if msg.Height != e.state.Height || msg.Round != e.state.Round {
+		e.logger.Debug("ignoring timeout for different height/round",
+			zap.Uint64("msg_height", msg.Height),
+			zap.Uint64("msg_round", msg.Round),
+			zap.Uint64("our_height", e.state.Height),
+			zap.Uint64("our_round", e.state.Round),
+		)
+		return
 	}
 
-	// If this timeout is for our current or future round, consider advancing.
-	if msg.Height == e.state.Height && msg.Round > e.state.Round {
-		e.logger.Info("received timeout for future round, advancing",
-			zap.Uint64("from_round", e.state.Round),
-			zap.Uint64("to_round", msg.Round),
-		)
-		e.EnterNewRound(msg.Round)
+	// Add to timeout collector for this round.
+	threshold, err := e.state.TimeoutCollector.AddTimeout(msg)
+	if err != nil {
+		e.logger.Debug("failed to add timeout message", zap.Error(err))
+		return
 	}
+
+	if !threshold {
+		e.logger.Debug("timeout message collected, waiting for f+1 threshold",
+			zap.Int("collected", e.state.TimeoutCollector.Size()),
+			zap.Uint64("height", msg.Height),
+			zap.Uint64("round", msg.Round),
+		)
+		return
+	}
+
+	// f+1 threshold reached — form TC and advance.
+	e.logger.Info("f+1 timeout threshold reached, advancing round",
+		zap.Uint64("height", e.state.Height),
+		zap.Uint64("from_round", e.state.Round),
+		zap.Uint64("to_round", e.state.Round+1),
+		zap.Int("timeout_count", e.state.TimeoutCollector.Size()),
+	)
+
+	// Update highest QC from the TC's collected timeouts.
+	if highQC := e.state.TimeoutCollector.HighestQC(); highQC != nil {
+		e.state.UpdateHighestQC(highQC)
+	}
+
+	e.EnterNewRound(e.state.Round + 1)
 }
 
 // eventLoop is the main consensus event loop.

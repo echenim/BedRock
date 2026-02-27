@@ -17,8 +17,9 @@ type ConsensusState struct {
 	HighestQC   *types.QuorumCertificate
 
 	// Current round state.
-	Proposal *types.Proposal
-	VoteSet  *VoteSet
+	Proposal         *types.Proposal
+	VoteSet          *VoteSet
+	TimeoutCollector *TimeoutCollector
 
 	// Commit tracking (two-chain rule §8).
 	LastCommitHeight uint64
@@ -28,10 +29,11 @@ type ConsensusState struct {
 // NewConsensusState creates a new ConsensusState starting at the given height.
 func NewConsensusState(height uint64, valSet *types.ValidatorSet) *ConsensusState {
 	return &ConsensusState{
-		Height:  height,
-		Round:   0,
-		Step:    StepPropose,
-		VoteSet: NewVoteSet(height, 0, valSet),
+		Height:           height,
+		Round:            0,
+		Step:             StepPropose,
+		VoteSet:          NewVoteSet(height, 0, valSet),
+		TimeoutCollector: NewTimeoutCollector(height, 0, valSet),
 	}
 }
 
@@ -41,6 +43,7 @@ func (cs *ConsensusState) ResetForNewRound(round uint64, valSet *types.Validator
 	cs.Step = StepPropose
 	cs.Proposal = nil
 	cs.VoteSet = NewVoteSet(cs.Height, round, valSet)
+	cs.TimeoutCollector = NewTimeoutCollector(cs.Height, round, valSet)
 }
 
 // ResetForNewHeight advances to a new height after commit.
@@ -50,6 +53,7 @@ func (cs *ConsensusState) ResetForNewHeight(height uint64, valSet *types.Validat
 	cs.Step = StepPropose
 	cs.Proposal = nil
 	cs.VoteSet = NewVoteSet(height, 0, valSet)
+	cs.TimeoutCollector = NewTimeoutCollector(height, 0, valSet)
 }
 
 // IsLocked returns true if the validator is locked on a block.
