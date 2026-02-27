@@ -128,7 +128,7 @@ func DefaultConfig() *Config {
 			MaxMemoryMB: 256,
 		},
 		Telemetry: TelemetryConfig{
-			Enabled: false,
+			Enabled: true, // Default to enabled so production nodes export metrics (audit S5).
 			Addr:    "0.0.0.0:26660",
 		},
 	}

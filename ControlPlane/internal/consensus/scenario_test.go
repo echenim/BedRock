@@ -379,9 +379,13 @@ func TestScenarioHandleTimeoutMsgHigherQC(t *testing.T) {
 	valSet := makeValidatorSet(t, []testValidator{v})
 	engine, _ := newTestEngine(t, v, valSet, nil)
 
+	// Build a properly signed QC that passes Verify() (audit S4).
+	blockHash := crypto.HashSHA256([]byte("block5"))
+	signedVote := signVote(t, v, blockHash, 1, 5)
 	higherQC := &types.QuorumCertificate{
 		Round:     5,
-		BlockHash: crypto.HashSHA256([]byte("block5")),
+		BlockHash: blockHash,
+		Votes:     []types.Vote{*signedVote},
 	}
 
 	// Send timeout for the CURRENT round (0) with a higher QC.
@@ -395,7 +399,7 @@ func TestScenarioHandleTimeoutMsgHigherQC(t *testing.T) {
 
 	engine.HandleTimeoutMsg(msg)
 
-	// HighestQC should be updated from the TC's collected messages.
+	// HighestQC should be updated from the TC's verified collected messages.
 	if engine.state.HighestQC == nil || engine.state.HighestQC.Round != 5 {
 		t.Fatal("expected highest QC to be updated to round 5")
 	}
@@ -404,6 +408,35 @@ func TestScenarioHandleTimeoutMsgHigherQC(t *testing.T) {
 	// The engine should have progressed beyond height 1.
 	if engine.state.Height < 2 {
 		t.Fatalf("expected height >= 2 after TC round advance, got %d", engine.state.Height)
+	}
+}
+
+// --- Scenario: HandleTimeoutMsg rejects unverified QC (S4 fix) ---
+// A timeout message with a forged (unsigned) QC must NOT be accepted.
+
+func TestScenarioHandleTimeoutMsgRejectsUnverifiedQC(t *testing.T) {
+	v := newTestValidator(t)
+	valSet := makeValidatorSet(t, []testValidator{v})
+	engine, _ := newTestEngine(t, v, valSet, nil)
+
+	// Forged QC with no valid signatures.
+	forgedQC := &types.QuorumCertificate{
+		Round:     10,
+		BlockHash: crypto.HashSHA256([]byte("forged")),
+	}
+
+	msg := &types.TimeoutMessage{
+		Height:  1,
+		Round:   0,
+		VoterID: v.address,
+		HighQC:  forgedQC,
+	}
+
+	engine.HandleTimeoutMsg(msg)
+
+	// The forged QC should NOT be accepted. HighestQC should remain nil.
+	if engine.state.HighestQC != nil && engine.state.HighestQC.Round == 10 {
+		t.Fatal("forged QC should not be accepted as highest QC")
 	}
 }
 
