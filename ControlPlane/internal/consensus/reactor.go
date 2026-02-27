@@ -2,10 +2,13 @@ package consensus
 
 import (
 	"context"
+	"time"
 
 	"github.com/echenim/Bedrock/controlplane/internal/types"
 	"go.uber.org/zap"
 )
+
+const watchdogInterval = 30 * time.Second
 
 // HandleProposal processes a received proposal message.
 func (e *Engine) HandleProposal(proposal *types.Proposal) {
@@ -141,6 +144,9 @@ func (e *Engine) HandleTimeoutMsg(msg *types.TimeoutMessage) {
 // eventLoop is the main consensus event loop.
 // All state mutations happen through this goroutine to prevent races.
 func (e *Engine) eventLoop(ctx context.Context) {
+	watchdog := time.NewTicker(watchdogInterval)
+	defer watchdog.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -161,8 +167,33 @@ func (e *Engine) eventLoop(ctx context.Context) {
 			e.mu.Lock()
 			e.EnterPropose()
 			e.mu.Unlock()
+
+		case <-watchdog.C:
+			e.mu.Lock()
+			e.checkWatchdog()
+			e.mu.Unlock()
 		}
 	}
+}
+
+// checkWatchdog detects stuck consensus states and emits warnings.
+// Must be called with e.mu held.
+func (e *Engine) checkWatchdog() {
+	if e.stepStart.IsZero() {
+		return
+	}
+	elapsed := time.Since(e.stepStart)
+	if elapsed > watchdogInterval {
+		e.logger.Warn("consensus watchdog: stuck in step",
+			zap.String("step", e.state.Step.String()),
+			zap.Uint64("height", e.state.Height),
+			zap.Uint64("round", e.state.Round),
+			zap.Duration("elapsed", elapsed),
+		)
+		e.metrics.ConsensusStuck.Inc()
+	}
+	// Update evidence pool size gauge while we're here.
+	e.metrics.EvidencePoolSize.Set(float64(e.evidencePool.Size()))
 }
 
 // DrainNextHeight processes a pending next-height signal synchronously.

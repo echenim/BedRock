@@ -104,6 +104,18 @@ func NewMetrics(namespace string) *Metrics {
 			Help:      "Time spent in the commit phase (QC formation to height advance).",
 			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 12),
 		}),
+		EvidencePoolSize: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: "consensus",
+			Name:      "evidence_pool_size",
+			Help:      "Number of slashing evidence entries in the evidence pool.",
+		}),
+		ConsensusStuck: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: "consensus",
+			Name:      "stuck_warnings_total",
+			Help:      "Number of times the consensus watchdog detected a stuck state.",
+		}),
 
 		PeerCount: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -129,6 +141,13 @@ func NewMetrics(namespace string) *Metrics {
 			Subsystem: "mempool",
 			Name:      "size",
 			Help:      "Current number of transactions in the mempool.",
+		}),
+		MempoolTxAge: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: "mempool",
+			Name:      "tx_age_seconds",
+			Help:      "Age of transactions when reaped from the mempool for block building.",
+			Buckets:   prometheus.ExponentialBuckets(0.1, 2, 14),
 		}),
 		TxsAccepted: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -171,8 +190,9 @@ func NewMetrics(namespace string) *Metrics {
 		m.ConsensusHeight, m.ConsensusRound, m.BlockTime,
 		m.VotesReceived, m.TimeoutsTriggered,
 		m.ProposeLatency, m.VoteLatency, m.CommitLatency,
+		m.EvidencePoolSize, m.ConsensusStuck,
 		m.PeerCount, m.MessagesSent, m.MessagesReceived,
-		m.MempoolSize, m.TxsAccepted, m.TxsRejected,
+		m.MempoolSize, m.MempoolTxAge, m.TxsAccepted, m.TxsRejected,
 		m.BlockGasUsed, m.ExecutionLatency,
 		m.SyncStatus,
 	)
@@ -191,10 +211,13 @@ func NopMetrics() *Metrics {
 		ProposeLatency:    prometheus.NewHistogram(prometheus.HistogramOpts{Name: "nop_pl"}),
 		VoteLatency:       prometheus.NewHistogram(prometheus.HistogramOpts{Name: "nop_vl"}),
 		CommitLatency:     prometheus.NewHistogram(prometheus.HistogramOpts{Name: "nop_cl"}),
+		EvidencePoolSize:  prometheus.NewGauge(prometheus.GaugeOpts{Name: "nop_eps"}),
+		ConsensusStuck:    prometheus.NewCounter(prometheus.CounterOpts{Name: "nop_cs"}),
 		PeerCount:         prometheus.NewGauge(prometheus.GaugeOpts{Name: "nop_pc"}),
 		MessagesSent:      prometheus.NewCounter(prometheus.CounterOpts{Name: "nop_ms"}),
 		MessagesReceived:  prometheus.NewCounter(prometheus.CounterOpts{Name: "nop_mr"}),
 		MempoolSize:       prometheus.NewGauge(prometheus.GaugeOpts{Name: "nop_mps"}),
+		MempoolTxAge:      prometheus.NewHistogram(prometheus.HistogramOpts{Name: "nop_mta"}),
 		TxsAccepted:       prometheus.NewCounter(prometheus.CounterOpts{Name: "nop_ta"}),
 		TxsRejected:       prometheus.NewCounter(prometheus.CounterOpts{Name: "nop_tr"}),
 		BlockGasUsed:      prometheus.NewHistogram(prometheus.HistogramOpts{Name: "nop_bgu"}),

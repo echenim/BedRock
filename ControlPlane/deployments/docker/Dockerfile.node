@@ -48,5 +48,8 @@ WORKDIR /home/bedrock
 
 EXPOSE 26656 26657 26700 26800 9090
 
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
+    CMD curl -sf http://localhost:26658/health || exit 1
+
 ENTRYPOINT ["bedrockd"]
 CMD ["start"]
