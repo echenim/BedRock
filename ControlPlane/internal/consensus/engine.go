@@ -8,6 +8,7 @@ import (
 
 	"github.com/echenim/Bedrock/controlplane/internal/crypto"
 	"github.com/echenim/Bedrock/controlplane/internal/storage"
+	"github.com/echenim/Bedrock/controlplane/internal/telemetry"
 	"github.com/echenim/Bedrock/controlplane/internal/types"
 	"go.uber.org/zap"
 )
@@ -28,6 +29,8 @@ type Engine struct {
 
 	timeouts     *TimeoutScheduler
 	evidencePool *EvidencePool
+	metrics      *telemetry.Metrics
+	stepStart    time.Time // tracks when the current phase began
 
 	// Channels for event processing.
 	proposalCh  chan *types.Proposal
@@ -78,6 +81,11 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 		execTimeout = 30 * time.Second
 	}
 
+	metrics := cfg.Metrics
+	if metrics == nil {
+		metrics = telemetry.NopMetrics()
+	}
+
 	return &Engine{
 		state:            NewConsensusState(startHeight, cfg.ValSet),
 		valSet:           cfg.ValSet,
@@ -96,6 +104,7 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 		voteCh:           make(chan *types.Vote, 64),
 		timeoutCh:        make(chan timeoutEvent, 16),
 		commitCh:         make(chan CommitEvent, 16),
+		metrics:          metrics,
 		nextHeightCh:     make(chan struct{}, 1),
 		ctx:              context.Background(), // replaced by Start(); safe default for pre-Start usage
 	}, nil

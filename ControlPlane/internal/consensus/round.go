@@ -1,6 +1,8 @@
 package consensus
 
 import (
+	"time"
+
 	"github.com/echenim/Bedrock/controlplane/internal/crypto"
 	"github.com/echenim/Bedrock/controlplane/internal/types"
 	"go.uber.org/zap"
@@ -23,6 +25,7 @@ func (e *Engine) EnterNewRound(round uint64) {
 // If not: wait for proposal with timeout.
 func (e *Engine) EnterPropose() {
 	e.state.Step = StepPropose
+	e.stepStart = time.Now()
 
 	proposer := e.valSet.GetProposer(e.state.Height, e.state.Round)
 	if proposer == nil {
@@ -74,7 +77,11 @@ func (e *Engine) EnterPropose() {
 // EnterVote begins the vote phase.
 // Verify proposal, check lock rules, sign vote, broadcast.
 func (e *Engine) EnterVote() {
+	if !e.stepStart.IsZero() {
+		e.metrics.ProposeLatency.Observe(time.Since(e.stepStart).Seconds())
+	}
 	e.state.Step = StepVote
+	e.stepStart = time.Now()
 
 	proposal := e.state.Proposal
 	if proposal == nil {
@@ -165,6 +172,14 @@ func (e *Engine) HandleTimeout(height, round uint64) {
 // a QC for its parent (block at height H-1), the parent is committed.
 // After processing, the engine always advances to the next height.
 func (e *Engine) onQuorumReached() {
+	if !e.stepStart.IsZero() {
+		e.metrics.VoteLatency.Observe(time.Since(e.stepStart).Seconds())
+	}
+	commitStart := time.Now()
+	defer func() {
+		e.metrics.CommitLatency.Observe(time.Since(commitStart).Seconds())
+	}()
+
 	// Guard against nil proposal — can occur if votes form a quorum before
 	// the proposal is received or after it is cleared by a round change (audit C6).
 	if e.state.Proposal == nil || e.state.Proposal.Block == nil {

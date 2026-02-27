@@ -5,6 +5,7 @@ import (
 
 	"github.com/echenim/Bedrock/controlplane/internal/crypto"
 	"github.com/echenim/Bedrock/controlplane/internal/storage"
+	"github.com/echenim/Bedrock/controlplane/internal/telemetry"
 	"github.com/echenim/Bedrock/controlplane/internal/types"
 	"go.uber.org/zap"
 )
@@ -86,6 +87,9 @@ type EngineConfig struct {
 	MaxTimeoutMs     int64         // max timeout cap in milliseconds (default: 60000)
 	TimeoutStepMs    int64         // vote/commit step timeout in milliseconds (default: 1000)
 	ExecutionTimeout time.Duration // max time for block execution (default: 30s)
+
+	// Observability.
+	Metrics *telemetry.Metrics
 }
 
 // DefaultEngineConfig returns an EngineConfig with sensible timeout defaults.

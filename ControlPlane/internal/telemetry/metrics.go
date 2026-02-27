@@ -16,6 +16,11 @@ type Metrics struct {
 	BlockTime         prometheus.Histogram
 	VotesReceived     prometheus.Counter
 	TimeoutsTriggered prometheus.Counter
+	ProposeLatency    prometheus.Histogram
+	VoteLatency       prometheus.Histogram
+	CommitLatency     prometheus.Histogram
+	EvidencePoolSize  prometheus.Gauge
+	ConsensusStuck    prometheus.Counter
 
 	// P2P.
 	PeerCount        prometheus.Gauge
@@ -23,9 +28,10 @@ type Metrics struct {
 	MessagesReceived prometheus.Counter
 
 	// Mempool.
-	MempoolSize prometheus.Gauge
-	TxsAccepted prometheus.Counter
-	TxsRejected prometheus.Counter
+	MempoolSize    prometheus.Gauge
+	MempoolTxAge   prometheus.Histogram
+	TxsAccepted    prometheus.Counter
+	TxsRejected    prometheus.Counter
 
 	// Execution.
 	BlockGasUsed     prometheus.Histogram
@@ -76,6 +82,27 @@ func NewMetrics(namespace string) *Metrics {
 			Subsystem: "consensus",
 			Name:      "timeouts_triggered_total",
 			Help:      "Total number of consensus timeouts triggered.",
+		}),
+		ProposeLatency: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: "consensus",
+			Name:      "propose_latency_seconds",
+			Help:      "Time spent in the propose phase per round.",
+			Buckets:   prometheus.ExponentialBuckets(0.01, 2, 12),
+		}),
+		VoteLatency: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: "consensus",
+			Name:      "vote_latency_seconds",
+			Help:      "Time spent in the vote phase per round.",
+			Buckets:   prometheus.ExponentialBuckets(0.01, 2, 12),
+		}),
+		CommitLatency: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: "consensus",
+			Name:      "commit_latency_seconds",
+			Help:      "Time spent in the commit phase (QC formation to height advance).",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 12),
 		}),
 
 		PeerCount: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -143,6 +170,7 @@ func NewMetrics(namespace string) *Metrics {
 	reg.MustRegister(
 		m.ConsensusHeight, m.ConsensusRound, m.BlockTime,
 		m.VotesReceived, m.TimeoutsTriggered,
+		m.ProposeLatency, m.VoteLatency, m.CommitLatency,
 		m.PeerCount, m.MessagesSent, m.MessagesReceived,
 		m.MempoolSize, m.TxsAccepted, m.TxsRejected,
 		m.BlockGasUsed, m.ExecutionLatency,
@@ -160,6 +188,9 @@ func NopMetrics() *Metrics {
 		BlockTime:         prometheus.NewHistogram(prometheus.HistogramOpts{Name: "nop_bt"}),
 		VotesReceived:     prometheus.NewCounter(prometheus.CounterOpts{Name: "nop_vr"}),
 		TimeoutsTriggered: prometheus.NewCounter(prometheus.CounterOpts{Name: "nop_tt"}),
+		ProposeLatency:    prometheus.NewHistogram(prometheus.HistogramOpts{Name: "nop_pl"}),
+		VoteLatency:       prometheus.NewHistogram(prometheus.HistogramOpts{Name: "nop_vl"}),
+		CommitLatency:     prometheus.NewHistogram(prometheus.HistogramOpts{Name: "nop_cl"}),
 		PeerCount:         prometheus.NewGauge(prometheus.GaugeOpts{Name: "nop_pc"}),
 		MessagesSent:      prometheus.NewCounter(prometheus.CounterOpts{Name: "nop_ms"}),
 		MessagesReceived:  prometheus.NewCounter(prometheus.CounterOpts{Name: "nop_mr"}),

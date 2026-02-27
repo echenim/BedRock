@@ -95,6 +95,7 @@ func NewNode(
 	ecfg.Executor = executor
 	ecfg.TxProvider = mp
 	ecfg.Logger = logger.Named("consensus")
+	ecfg.Metrics = metrics
 	ecfg.BaseTimeoutMs = cfg.Consensus.TimeoutPropose.Milliseconds()
 	if ecfg.BaseTimeoutMs == 0 {
 		ecfg.BaseTimeoutMs = 3000
