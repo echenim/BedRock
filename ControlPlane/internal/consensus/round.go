@@ -177,7 +177,10 @@ func (e *Engine) onQuorumReached() {
 	// (for its parent), the parent block is now committed.
 	previousLockedBlock := e.state.LockedBlock
 	if block.QC != nil && previousLockedBlock != nil {
-		e.persistCommit(previousLockedBlock, block.QC)
+		if err := e.persistCommit(previousLockedBlock, block.QC); err != nil {
+			// Storage failure — halt consensus to prevent state divergence.
+			return
+		}
 	}
 
 	// Lock on the current block and update highest QC.
