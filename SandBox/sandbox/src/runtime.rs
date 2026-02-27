@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use wasmtime::{Config, Engine, Linker, Module, Store};
+use wasmtime::{Config, Engine, Linker, Module, Store, Trap};
 
 use bedrock_hostapi::{ExecutionConfig, StateStore};
 use bedrock_primitives::{
@@ -225,16 +225,20 @@ fn alloc_and_write(
 ///
 /// Fuel exhaustion → `SandboxError::FuelExhausted`
 /// Other traps → `SandboxError::GuestTrapped`
+///
+/// Uses structured `Trap` type for detection instead of string matching (audit R2).
 fn handle_trap<R>(result: Result<R, anyhow::Error>) -> Result<R, SandboxError> {
     match result {
         Ok(val) => Ok(val),
         Err(e) => {
-            let msg = format!("{}", e);
-            if msg.contains("fuel") {
-                Err(SandboxError::FuelExhausted)
-            } else {
-                Err(SandboxError::GuestTrapped(msg))
+            // Try to downcast to a Wasmtime Trap for structured detection.
+            if let Some(trap) = e.downcast_ref::<Trap>() {
+                if matches!(trap, Trap::OutOfFuel) {
+                    return Err(SandboxError::FuelExhausted);
+                }
+                return Err(SandboxError::GuestTrapped(format!("{}", trap)));
             }
+            Err(SandboxError::GuestTrapped(format!("{}", e)))
         }
     }
 }

@@ -212,6 +212,11 @@ func (e *Engine) onQuorumReached() {
 // persistCommit finalizes a committed block: persists to store, notifies subscribers.
 // Returns an error if storage fails — the caller MUST halt consensus on error to
 // prevent in-memory state from diverging from on-disk state (audit finding C4).
+//
+// The consensus mutex is released during storage I/O so that message dispatching
+// is not blocked by disk latency (audit P1). Since the event loop is a single
+// goroutine, no other consensus events are processed during the I/O window;
+// only external message submissions (which enqueue to channels) are unblocked.
 func (e *Engine) persistCommit(block *types.Block, qc *types.QuorumCertificate) error {
 	blockHash := block.Header.BlockHash
 	if blockHash.IsZero() {
@@ -229,21 +234,14 @@ func (e *Engine) persistCommit(block *types.Block, qc *types.QuorumCertificate) 
 
 	stateRoot := block.Header.StateRoot
 
-	// Persist to store. Storage failure is fatal — consensus must halt.
+	// Release the consensus mutex during storage I/O (audit P1).
+	// This allows external callers to enqueue messages while I/O is pending.
 	if e.store != nil {
-		if err := e.store.SaveBlock(block, qc); err != nil {
-			e.logger.Error("CRITICAL: failed to save block — halting consensus",
-				zap.Error(err),
-				zap.Uint64("height", block.Header.Height),
-			)
-			return err
-		}
-		if err := e.store.SaveCommit(block.Header.Height, stateRoot); err != nil {
-			e.logger.Error("CRITICAL: failed to save commit — halting consensus",
-				zap.Error(err),
-				zap.Uint64("height", block.Header.Height),
-			)
-			return err
+		e.mu.Unlock()
+		saveErr := e.doStorageWrite(block, qc, stateRoot)
+		e.mu.Lock()
+		if saveErr != nil {
+			return saveErr
 		}
 	}
 
@@ -266,6 +264,25 @@ func (e *Engine) persistCommit(block *types.Block, qc *types.QuorumCertificate) 
 		)
 	}
 
+	return nil
+}
+
+// doStorageWrite performs the actual storage I/O outside the consensus lock.
+func (e *Engine) doStorageWrite(block *types.Block, qc *types.QuorumCertificate, stateRoot types.Hash) error {
+	if err := e.store.SaveBlock(block, qc); err != nil {
+		e.logger.Error("CRITICAL: failed to save block — halting consensus",
+			zap.Error(err),
+			zap.Uint64("height", block.Header.Height),
+		)
+		return err
+	}
+	if err := e.store.SaveCommit(block.Header.Height, stateRoot); err != nil {
+		e.logger.Error("CRITICAL: failed to save commit — halting consensus",
+			zap.Error(err),
+			zap.Uint64("height", block.Header.Height),
+		)
+		return err
+	}
 	return nil
 }
 

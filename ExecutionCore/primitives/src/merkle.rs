@@ -35,10 +35,17 @@ pub struct SparseMerkleTree {
 pub struct MerkleProof {
     /// Sibling hashes along the path from leaf to root.
     pub siblings: Vec<Hash>,
-    /// Indicates whether each sibling is on the left (false) or right (true).
+    /// For each level, `true` means our node is on the left (sibling is right),
+    /// `false` means our node is on the right (sibling is left).
     pub path_bits: Vec<bool>,
     /// The leaf hash (hash of key-value), or None if proving absence.
     pub leaf_hash: Option<Hash>,
+    /// For non-membership proofs in non-empty trees: the nearest neighbor leaf
+    /// (key immediately before or after the absent key in sorted order).
+    /// The verifier checks that this neighbor leaf is part of the tree and that
+    /// the queried key is indeed absent (audit R5).
+    pub neighbor_key: Option<Vec<u8>>,
+    pub neighbor_value: Option<Vec<u8>>,
 }
 
 impl SparseMerkleTree {
@@ -79,6 +86,14 @@ impl SparseMerkleTree {
         self.entries.is_empty()
     }
 
+    /// Compute leaf hashes once for reuse in root() and prove() (audit P4).
+    fn leaf_hashes(&self) -> Vec<Hash> {
+        self.entries
+            .iter()
+            .map(|(k, v)| hash_leaf(k, v))
+            .collect()
+    }
+
     /// Compute the deterministic Merkle root.
     ///
     /// Empty tree returns `ZERO_HASH`.
@@ -91,15 +106,7 @@ impl SparseMerkleTree {
         if self.entries.is_empty() {
             return [0u8; 32];
         }
-
-        // Compute leaf hashes in sorted key order
-        let leaf_hashes: Vec<Hash> = self
-            .entries
-            .iter()
-            .map(|(k, v)| hash_leaf(k, v))
-            .collect();
-
-        compute_root_from_leaves(&leaf_hashes)
+        compute_root_from_leaves(&self.leaf_hashes())
     }
 
     /// Apply a batch of writes from a `StateOverlay`.
@@ -119,72 +126,132 @@ impl SparseMerkleTree {
     }
 
     /// Generate a Merkle proof for a key.
+    ///
+    /// For existing keys: a standard inclusion proof.
+    /// For absent keys in a non-empty tree: a non-membership proof using the
+    /// nearest neighbor leaf (audit R5). The verifier can confirm the neighbor
+    /// is in the tree and the queried key is not.
     pub fn prove(&self, key: &[u8]) -> MerkleProof {
         if self.entries.is_empty() {
             return MerkleProof {
                 siblings: Vec::new(),
                 path_bits: Vec::new(),
                 leaf_hash: None,
+                neighbor_key: None,
+                neighbor_value: None,
             };
         }
 
-        let leaf_hashes: Vec<Hash> = self
-            .entries
-            .iter()
-            .map(|(k, v)| hash_leaf(k, v))
-            .collect();
+        let leaf_hashes = self.leaf_hashes();
 
         // Find the index of the key in sorted order
         let keys: Vec<&Vec<u8>> = self.entries.keys().collect();
         let target_idx = keys.iter().position(|k| k.as_slice() == key);
 
-        let leaf_hash = target_idx.map(|idx| leaf_hashes[idx]);
+        match target_idx {
+            Some(idx) => {
+                // Membership proof — key exists.
+                let (siblings, path_bits) = compute_proof_path(&leaf_hashes, idx);
+                MerkleProof {
+                    leaf_hash: Some(leaf_hashes[idx]),
+                    siblings,
+                    path_bits,
+                    neighbor_key: None,
+                    neighbor_value: None,
+                }
+            }
+            None => {
+                // Non-membership proof — find nearest neighbor in sorted order.
+                // Use binary search to find the insertion point, then pick the
+                // nearest existing key as the proof anchor.
+                let neighbor_idx = match keys.binary_search_by(|k| k.as_slice().cmp(key)) {
+                    Ok(_) => unreachable!(), // target_idx was None, so key not found
+                    Err(pos) => {
+                        // pos is the insertion point. Use the predecessor if it
+                        // exists, otherwise the successor.
+                        if pos > 0 { pos - 1 } else { 0 }
+                    }
+                };
 
-        // For a simple tree, compute the proof path
-        let (siblings, path_bits) = match target_idx {
-            Some(idx) => compute_proof_path(&leaf_hashes, idx),
-            None => (Vec::new(), Vec::new()),
-        };
+                let (siblings, path_bits) = compute_proof_path(&leaf_hashes, neighbor_idx);
+                let nk = keys[neighbor_idx].clone();
+                let nv = self.entries.get(&nk).cloned().unwrap_or_default();
 
-        MerkleProof {
-            siblings,
-            path_bits,
-            leaf_hash,
+                MerkleProof {
+                    leaf_hash: None,
+                    siblings,
+                    path_bits,
+                    neighbor_key: Some(nk),
+                    neighbor_value: Some(nv),
+                }
+            }
         }
     }
 
     /// Verify a Merkle proof against a root hash.
+    ///
+    /// For membership proofs (`value = Some(...)`): verifies the leaf matches
+    /// and walks the proof path to the root.
+    ///
+    /// For non-membership proofs (`value = None`, audit R5): if the tree is empty
+    /// the root must be zero; otherwise, verifies that the neighbor leaf is in the
+    /// tree and that the queried key is different from the neighbor key.
     pub fn verify_proof(
         root: &Hash,
         proof: &MerkleProof,
         key: &[u8],
         value: Option<&[u8]>,
     ) -> bool {
-        let leaf_hash = match (&proof.leaf_hash, value) {
+        match (&proof.leaf_hash, value) {
+            // Membership proof: verify leaf hash matches key+value, then walk path.
             (Some(lh), Some(v)) => {
                 let expected = hash_leaf(key, v);
                 if *lh != expected {
                     return false;
                 }
-                *lh
+                walk_proof(*lh, &proof.siblings, &proof.path_bits) == *root
             }
-            (None, None) => return proof.siblings.is_empty() && *root == [0u8; 32],
-            _ => return false,
-        };
 
-        // Walk up the proof path
-        let mut current = leaf_hash;
-        for (sibling, is_right) in proof.siblings.iter().zip(proof.path_bits.iter()) {
-            current = if *is_right {
-                hash_internal(&current, sibling)
-            } else {
-                hash_internal(sibling, &current)
-            };
+            // Non-membership: empty tree case.
+            (None, None) if proof.neighbor_key.is_none() => {
+                proof.siblings.is_empty() && *root == [0u8; 32]
+            }
+
+            // Non-membership: non-empty tree with neighbor proof (audit R5).
+            (None, None) => {
+                let (nk, nv) = match (&proof.neighbor_key, &proof.neighbor_value) {
+                    (Some(k), Some(v)) => (k.as_slice(), v.as_slice()),
+                    _ => return false,
+                };
+                // The neighbor key must differ from the queried key.
+                if nk == key {
+                    return false;
+                }
+                // Verify the neighbor leaf is part of the tree.
+                let neighbor_hash = hash_leaf(nk, nv);
+                walk_proof(neighbor_hash, &proof.siblings, &proof.path_bits) == *root
+            }
+
+            _ => false,
         }
-
-        current == *root
     }
 
+}
+
+/// Walk a proof path from a leaf hash to the computed root.
+fn walk_proof(leaf: Hash, siblings: &[Hash], path_bits: &[bool]) -> Hash {
+    let mut current = leaf;
+    for (sibling, current_is_left) in siblings.iter().zip(path_bits.iter()) {
+        current = if *current_is_left {
+            hash_internal(&current, sibling)
+        } else {
+            hash_internal(sibling, &current)
+        };
+    }
+    current
+}
+
+impl SparseMerkleTree {
     /// Returns a reference to all entries.
     pub fn entries(&self) -> &BTreeMap<Vec<u8>, Vec<u8>> {
         &self.entries
@@ -268,7 +335,7 @@ fn compute_proof_path(leaves: &[Hash], index: usize) -> (Vec<Hash>, Vec<bool>) {
 
         if sibling_idx < current_level.len() {
             siblings.push(current_level[sibling_idx]);
-            // true = our node is on the left (sibling is right)
+            // true = current node is on the left (even index), sibling is right
             path_bits.push(idx.is_multiple_of(2));
         }
         // else: odd element, no sibling at this level
@@ -446,6 +513,39 @@ mod tests {
             tree2.insert(key.as_bytes(), val.as_bytes());
         }
         assert_eq!(root1, tree2.root());
+    }
+
+    #[test]
+    fn test_non_membership_proof_in_non_empty_tree() {
+        let mut tree = SparseMerkleTree::new();
+        tree.insert(b"alice", b"100");
+        tree.insert(b"charlie", b"300");
+        let root = tree.root();
+
+        // "bob" is absent — should get a non-membership proof with neighbor
+        let proof = tree.prove(b"bob");
+        assert!(proof.leaf_hash.is_none());
+        assert!(proof.neighbor_key.is_some());
+
+        // Verify non-membership
+        assert!(SparseMerkleTree::verify_proof(&root, &proof, b"bob", None));
+
+        // Should NOT verify as membership
+        assert!(!SparseMerkleTree::verify_proof(
+            &root,
+            &proof,
+            b"bob",
+            Some(b"200")
+        ));
+    }
+
+    #[test]
+    fn test_non_membership_proof_empty_tree() {
+        let tree = SparseMerkleTree::new();
+        let root = tree.root();
+
+        let proof = tree.prove(b"anything");
+        assert!(SparseMerkleTree::verify_proof(&root, &proof, b"anything", None));
     }
 
     #[test]

@@ -107,17 +107,20 @@ func (m *Mempool) AddTx(tx []byte) (types.Hash, error) {
 // ReapMaxTxs returns up to maxBytes worth of transactions ordered by fee.
 // This implements the consensus.TxProvider interface.
 // Per SPEC.md §15: deterministic ordering for block proposals.
+//
+// Takes a snapshot of the sorted queue under the lock, then filters outside
+// the lock to minimize contention with AddTx (audit P2).
 func (m *Mempool) ReapMaxTxs(maxBytes int) [][]byte {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	if m.txs.Len() == 0 {
+		m.mu.RUnlock()
 		return nil
 	}
-
-	// Get all transactions in priority order.
+	// Snapshot the sorted list under the lock.
 	sorted := m.txs.All()
+	m.mu.RUnlock()
 
+	// Filter outside the lock — no shared state is accessed here.
 	var (
 		result    [][]byte
 		totalSize int

@@ -34,8 +34,12 @@ use crate::imports;
 /// 0 on success, non-zero error code on failure.
 #[no_mangle]
 pub extern "C" fn bedrock_init(version_ptr: i32, version_len: i32) -> i32 {
-    // Validate pointer and length
-    if version_len != 4 || version_ptr == 0 {
+    // Validate pointer and length (audit R4: bounds check).
+    if version_len != 4 || version_ptr <= 0 {
+        return ErrorCode::BadPointer as i32;
+    }
+    // Guard against pointer overflow within linear memory.
+    if (version_ptr as u64).checked_add(version_len as u64).is_none() {
         return ErrorCode::BadPointer as i32;
     }
 
@@ -79,8 +83,18 @@ pub extern "C" fn bedrock_execute_block(
     resp_ptr_ptr: i32,
     resp_len_ptr: i32,
 ) -> i32 {
-    // Validate input pointers
-    if req_ptr == 0 || req_len <= 0 || resp_ptr_ptr == 0 || resp_len_ptr == 0 {
+    // Validate input pointers (audit R4: bounds check).
+    if req_ptr <= 0 || req_len <= 0 || resp_ptr_ptr <= 0 || resp_len_ptr <= 0 {
+        return ErrorCode::BadPointer as i32;
+    }
+    // Guard against pointer overflow within linear memory.
+    if (req_ptr as u64).checked_add(req_len as u64).is_none() {
+        return ErrorCode::BadPointer as i32;
+    }
+    // Ensure response output pointers don't overflow (each needs 4 bytes).
+    if (resp_ptr_ptr as u64).checked_add(4).is_none()
+        || (resp_len_ptr as u64).checked_add(4).is_none()
+    {
         return ErrorCode::BadPointer as i32;
     }
 

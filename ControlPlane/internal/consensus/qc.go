@@ -8,22 +8,27 @@ import (
 
 // MakeQC creates a QuorumCertificate from the collected votes.
 // Only valid if the VoteSet HasQuorum().
+// Builds the vote slice directly from the map to avoid an intermediate
+// pointer slice allocation (audit P3).
 func (vs *VoteSet) MakeQC() (*types.QuorumCertificate, error) {
 	if !vs.HasQuorum() {
 		return nil, errors.New("cannot create QC: insufficient quorum")
 	}
 
-	votes := vs.GetVotes()
-	if len(votes) == 0 {
+	n := len(vs.votes)
+	if n == 0 {
 		return nil, errors.New("cannot create QC: no votes")
 	}
 
-	// All votes should be for the same block hash.
-	blockHash := votes[0].BlockHash
-
-	domainVotes := make([]types.Vote, len(votes))
-	for i, v := range votes {
-		domainVotes[i] = *v
+	domainVotes := make([]types.Vote, 0, n)
+	var blockHash types.Hash
+	first := true
+	for _, v := range vs.votes {
+		if first {
+			blockHash = v.BlockHash
+			first = false
+		}
+		domainVotes = append(domainVotes, *v)
 	}
 
 	return &types.QuorumCertificate{
