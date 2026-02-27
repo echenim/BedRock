@@ -72,8 +72,9 @@ type StorageConfig struct {
 
 // RPCConfig holds RPC server parameters.
 type RPCConfig struct {
-	GRPCAddr string `toml:"grpc_addr"`
-	HTTPAddr string `toml:"http_addr"`
+	GRPCAddr  string `toml:"grpc_addr"`
+	HTTPAddr  string `toml:"http_addr"`
+	AdminAddr string `toml:"admin_addr"` // Admin/debug API bind address (audit S6).
 }
 
 // ExecutionConfig holds execution engine parameters.
@@ -118,8 +119,9 @@ func DefaultConfig() *Config {
 			Backend: "pebble",
 		},
 		RPC: RPCConfig{
-			GRPCAddr: "0.0.0.0:26657",
-			HTTPAddr: "0.0.0.0:26658",
+			GRPCAddr:  "0.0.0.0:26657",
+			HTTPAddr:  "0.0.0.0:26658",
+			AdminAddr: "127.0.0.1:26661", // Loopback only by default (audit S6).
 		},
 		Execution: ExecutionConfig{
 			WASMPath:    "bedrock-execution.wasm",

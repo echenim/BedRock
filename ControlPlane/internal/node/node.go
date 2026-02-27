@@ -133,8 +133,12 @@ func NewNode(
 		gw = rpc.NewGateway(cfg.RPC.HTTPAddr, nodeSvc, logger.Named("gateway"))
 	}
 
-	// 9. Admin server.
-	adminSrv := admin.NewServer("127.0.0.1:26661", engine, mp, syncer, logger.Named("admin"))
+	// 9. Admin server — bind address is configurable (audit S6).
+	adminAddr := cfg.RPC.AdminAddr
+	if adminAddr == "" {
+		adminAddr = "127.0.0.1:26661"
+	}
+	adminSrv := admin.NewServer(adminAddr, engine, mp, syncer, logger.Named("admin"))
 
 	return &Node{
 		cfg:         cfg,
