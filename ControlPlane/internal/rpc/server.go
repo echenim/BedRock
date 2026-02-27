@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	rpcv1 "github.com/echenim/Bedrock/controlplane/gen/proto/bedrock/rpc/v1"
 	"github.com/echenim/Bedrock/controlplane/internal/config"
@@ -75,10 +76,24 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully shuts down the server.
+// Stop gracefully shuts down the server with a timeout. If GracefulStop does
+// not complete within 10 seconds, it falls back to a hard stop (audit H5).
 func (s *Server) Stop() error {
 	s.logger.Info("gRPC server stopping")
-	s.grpcServer.GracefulStop()
+
+	done := make(chan struct{})
+	go func() {
+		s.grpcServer.GracefulStop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		s.logger.Info("gRPC server stopped gracefully")
+	case <-time.After(10 * time.Second):
+		s.logger.Warn("gRPC graceful stop timed out, forcing stop")
+		s.grpcServer.Stop()
+	}
 	return nil
 }
 
