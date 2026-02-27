@@ -1,6 +1,7 @@
 package types
 
 import (
+	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -80,6 +81,15 @@ func (tm *TimeoutMessage) SigningPayload() []byte {
 	binary.LittleEndian.PutUint64(buf[:8], tm.Height)
 	binary.LittleEndian.PutUint64(buf[8:16], tm.Round)
 	return buf
+}
+
+// Verify checks the timeout message signature against the voter's public key.
+func (tm *TimeoutMessage) Verify(pubKey [32]byte) bool {
+	if tm.Signature == [64]byte{} {
+		return false
+	}
+	payload := tm.SigningPayload()
+	return ed25519.Verify(pubKey[:], payload, tm.Signature[:])
 }
 
 // ToProto converts the TimeoutMessage to its protobuf representation.

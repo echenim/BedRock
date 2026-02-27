@@ -53,6 +53,19 @@ func (vs *ValidatorSet) HasQuorum(votingPower uint64) bool {
 	return votingPower >= vs.Quorum()
 }
 
+// FPlusOne returns the f+1 threshold: the minimum voting power needed to prove
+// that at least one honest validator participated (since at most f are Byzantine).
+// Per SPEC.md §10: f+1 timeout messages are required to form a Timeout Certificate.
+func (vs *ValidatorSet) FPlusOne() uint64 {
+	f := (vs.TotalPower - 1) / 3
+	return f + 1
+}
+
+// HasFPlusOne checks if votingPower >= f+1.
+func (vs *ValidatorSet) HasFPlusOne(votingPower uint64) bool {
+	return votingPower >= vs.FPlusOne()
+}
+
 // GetProposer returns the proposer for (height, round).
 // Deterministic rotation: proposer_index = (height + round) % len(validators).
 // Per SPEC.md §6.
